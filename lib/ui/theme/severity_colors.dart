@@ -48,17 +48,16 @@ class SeverityColors extends ThemeExtension<SeverityColors> {
     Color? onWarning,
     Color? warningContainer,
     Color? onWarningContainer,
-  }) =>
-      SeverityColors(
-        success: success ?? this.success,
-        onSuccess: onSuccess ?? this.onSuccess,
-        successContainer: successContainer ?? this.successContainer,
-        onSuccessContainer: onSuccessContainer ?? this.onSuccessContainer,
-        warning: warning ?? this.warning,
-        onWarning: onWarning ?? this.onWarning,
-        warningContainer: warningContainer ?? this.warningContainer,
-        onWarningContainer: onWarningContainer ?? this.onWarningContainer,
-      );
+  }) => SeverityColors(
+    success: success ?? this.success,
+    onSuccess: onSuccess ?? this.onSuccess,
+    successContainer: successContainer ?? this.successContainer,
+    onSuccessContainer: onSuccessContainer ?? this.onSuccessContainer,
+    warning: warning ?? this.warning,
+    onWarning: onWarning ?? this.onWarning,
+    warningContainer: warningContainer ?? this.warningContainer,
+    onWarningContainer: onWarningContainer ?? this.onWarningContainer,
+  );
 
   @override
   SeverityColors lerp(SeverityColors? other, double t) {
@@ -66,14 +65,28 @@ class SeverityColors extends ThemeExtension<SeverityColors> {
     return SeverityColors(
       success: Color.lerp(success, other.success, t)!,
       onSuccess: Color.lerp(onSuccess, other.onSuccess, t)!,
-      successContainer: Color.lerp(successContainer, other.successContainer, t)!,
-      onSuccessContainer:
-          Color.lerp(onSuccessContainer, other.onSuccessContainer, t)!,
+      successContainer: Color.lerp(
+        successContainer,
+        other.successContainer,
+        t,
+      )!,
+      onSuccessContainer: Color.lerp(
+        onSuccessContainer,
+        other.onSuccessContainer,
+        t,
+      )!,
       warning: Color.lerp(warning, other.warning, t)!,
       onWarning: Color.lerp(onWarning, other.onWarning, t)!,
-      warningContainer: Color.lerp(warningContainer, other.warningContainer, t)!,
-      onWarningContainer:
-          Color.lerp(onWarningContainer, other.onWarningContainer, t)!,
+      warningContainer: Color.lerp(
+        warningContainer,
+        other.warningContainer,
+        t,
+      )!,
+      onWarningContainer: Color.lerp(
+        onWarningContainer,
+        other.onWarningContainer,
+        t,
+      )!,
     );
   }
 }

@@ -40,8 +40,9 @@ ThemeData buildTheme(Brightness brightness) {
       indicatorColor: scheme.secondaryContainer,
       minExtendedWidth: 220,
     ),
-    tooltipTheme:
-        const TooltipThemeData(waitDuration: Duration(milliseconds: 500)),
+    tooltipTheme: const TooltipThemeData(
+      waitDuration: Duration(milliseconds: 500),
+    ),
     // ignore: deprecated_member_use
     progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
     // ignore: deprecated_member_use

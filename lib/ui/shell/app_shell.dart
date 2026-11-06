@@ -87,7 +87,11 @@ class AppShell extends StatelessWidget {
     );
   }
 
-  Widget _icon(BuildContext context, AppDestination d, {required bool selected}) {
+  Widget _icon(
+    BuildContext context,
+    AppDestination d, {
+    required bool selected,
+  }) {
     final icon = Icon(d.icon, fill: selected ? 1 : 0);
     if (d != AppDestination.overview || alert == AlertLevel.ok) return icon;
 

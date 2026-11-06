@@ -17,12 +17,16 @@ Future<void> pumpShell(
   t.view.physicalSize = size;
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
-  await t.pumpWidget(testApp(AppShell(
-    current: current,
-    onSelect: onSelect ?? (_) {},
-    alert: alert,
-    body: const SizedBox(),
-  )));
+  await t.pumpWidget(
+    testApp(
+      AppShell(
+        current: current,
+        onSelect: onSelect ?? (_) {},
+        alert: alert,
+        body: const SizedBox(),
+      ),
+    ),
+  );
 }
 
 void main() {
@@ -35,22 +39,27 @@ void main() {
 
   testWidgets('rail compacto abaixo de 840', (t) async {
     await pumpShell(t, const Size(800, 600));
-    expect(t.widget<NavigationRail>(find.byType(NavigationRail)).extended,
-        isFalse);
+    expect(
+      t.widget<NavigationRail>(find.byType(NavigationRail)).extended,
+      isFalse,
+    );
   });
 
-  testWidgets('rail estendido a partir de 840, com os seis destinos em pt-BR',
-      (t) async {
+  testWidgets('rail estendido a partir de 840, com os seis destinos em pt-BR', (
+    t,
+  ) async {
     await pumpShell(t, const Size(1000, 700));
-    expect(t.widget<NavigationRail>(find.byType(NavigationRail)).extended,
-        isTrue);
+    expect(
+      t.widget<NavigationRail>(find.byType(NavigationRail)).extended,
+      isTrue,
+    );
     for (final l in [
       'Visão geral',
       'Diretórios',
       'Arquivos grandes',
       'Limpeza',
       'Docker',
-      'Configurações'
+      'Configurações',
     ]) {
       expect(find.text(l), findsOneWidget);
     }
