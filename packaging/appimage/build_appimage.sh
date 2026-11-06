@@ -27,6 +27,7 @@ if [ ! -x "$TOOL" ]; then
 fi
 
 mkdir -p dist
+rm -f "dist/disk-cleanup-$VERSION-x86_64.AppImage"
 ARCH=x86_64 "$TOOL" --appimage-extract-and-run \
   "$APPDIR" "dist/disk-cleanup-$VERSION-x86_64.AppImage"
 echo "dist/disk-cleanup-$VERSION-x86_64.AppImage"
