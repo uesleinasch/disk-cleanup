@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:path/path.dart' as p;
@@ -381,13 +382,15 @@ class _AddDirectoryDialogState extends State<_AddDirectoryDialog> {
   }
 
   Future<void> _pick() async {
-    final r = await widget.scan.services.runner.run('zenity', [
-      '--file-selection',
-      '--directory',
-      '--title=Escolha um diretório',
-    ]);
-    if (r.exitCode == 0) {
-      setState(() => _controller.text = r.stdoutText.trim());
+    final path = await getDirectoryPath(
+      confirmButtonText: 'Escolher',
+      initialDirectory: widget.scan.services.home,
+    );
+    if (path != null && mounted) {
+      setState(() {
+        _controller.text = path;
+        _error = null;
+      });
     }
   }
 
