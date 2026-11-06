@@ -89,6 +89,28 @@ class ScanController extends ChangeNotifier {
     replaceDocker(await services.docker.inventoryAsRoot());
   }
 
+  final Set<String> measuring = {};
+
+  Future<void> measureDir(String dir) async {
+    if (measuring.contains(dir)) return;
+    measuring.add(dir);
+    notifyListeners();
+    try {
+      final r = await services.du.childrenSizes(dir);
+      final locked = {..._state.lockedDirs};
+      r.permissionDenied ? locked.add(dir) : locked.remove(dir);
+      _state = _state.copyWith(
+        mappedDirs: {..._state.mappedDirs, dir: r},
+        lockedDirs: locked,
+      );
+    } on Object catch (e) {
+      debugPrint('Falha ao medir $dir: $e');
+    } finally {
+      measuring.remove(dir);
+      notifyListeners();
+    }
+  }
+
   Future<bool> measureLocked(String dir) async {
     final result = await services.root.run([DuMeasure(dir)]);
     if (result.cancelled || result.exitCodes[0] != 0) return false;

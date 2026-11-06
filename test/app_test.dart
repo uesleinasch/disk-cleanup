@@ -239,4 +239,27 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('diretório recém-adicionado tem menu de ações', (t) async {
+    await boot(t, const Size(1280, 900));
+    final extra = p.join(services.home, 'novo');
+    await t.runAsync(
+      () => settings.update(
+        (s) => s.copyWith(mappedDirs: [...s.mappedDirs, extra]),
+      ),
+    );
+    await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await t.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await t.pumpAndSettle();
+    expect(
+      find.text('Ainda não medido. Use o menu ⋮ para medir agora.'),
+      findsOneWidget,
+    );
+    await t.tap(find.byTooltip('Ações').last);
+    await t.pumpAndSettle();
+    expect(find.text('Medir agora'), findsOneWidget);
+    expect(find.text('Abrir no gerenciador de arquivos'), findsOneWidget);
+    expect(find.text('Parar de mapear'), findsOneWidget);
+  });
 }

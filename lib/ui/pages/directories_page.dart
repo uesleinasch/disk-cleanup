@@ -41,7 +41,7 @@ class _DirectoriesPageState extends State<DirectoriesPage> {
           : s.copyWith(mappedDirs: [...s.mappedDirs, path]),
     );
     setState(() => _selected = path);
-    await widget.scan.scan();
+    await widget.scan.measureDir(path);
   }
 
   Future<void> _unmap(String dir) async {
@@ -78,6 +78,7 @@ class _DirectoriesPageState extends State<DirectoriesPage> {
                 _selected = d;
                 _showDetailNarrow = true;
               }),
+              onUnmap: _unmap,
             );
             final detail = selected == null
                 ? const SizedBox.shrink()
@@ -134,19 +135,87 @@ class _DirList extends StatelessWidget {
     required this.selected,
     required this.scan,
     required this.onSelect,
+    required this.onUnmap,
   });
 
   final List<String> dirs;
   final String? selected;
   final ScanController scan;
   final ValueChanged<String> onSelect;
+  final ValueChanged<String> onUnmap;
+
+  Widget _size(BuildContext context, String dir, TextTheme text) {
+    final state = scan.state;
+    if (scan.measuring.contains(dir)) {
+      return const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    final result = state.mappedDirs[dir];
+    if (state.lockedDirs.contains(dir) || result == null) {
+      return const SizedBox.shrink();
+    }
+    return Tooltip(
+      message: formatBytesExact(result.total),
+      child: Text(
+        formatBytes(result.total),
+        style: text.titleMedium?.copyWith(fontFeatures: kTabular),
+      ),
+    );
+  }
+
+  Widget _menu(String dir) => PopupMenuButton<String>(
+    tooltip: 'Ações',
+    icon: const Icon(Symbols.more_vert_rounded),
+    onSelected: (action) => switch (action) {
+      'measure' => scan.measureDir(dir),
+      'measureRoot' => scan.measureLocked(dir),
+      'open' => scan.services.runner.run('xdg-open', [dir]),
+      _ => Future(() => onUnmap(dir)),
+    },
+    itemBuilder: (_) => [
+      if (scan.state.lockedDirs.contains(dir))
+        const PopupMenuItem(
+          value: 'measureRoot',
+          child: ListTile(
+            leading: Icon(Symbols.admin_panel_settings_rounded),
+            title: Text('Medir com senha de administrador'),
+          ),
+        )
+      else
+        PopupMenuItem(
+          value: 'measure',
+          enabled: !scan.measuring.contains(dir),
+          child: const ListTile(
+            leading: Icon(Symbols.refresh_rounded),
+            title: Text('Medir agora'),
+          ),
+        ),
+      const PopupMenuItem(
+        value: 'open',
+        child: ListTile(
+          leading: Icon(Symbols.folder_open_rounded),
+          title: Text('Abrir no gerenciador de arquivos'),
+        ),
+      ),
+      const PopupMenuItem(
+        value: 'unmap',
+        child: ListTile(
+          leading: Icon(Symbols.visibility_off_rounded),
+          title: Text('Parar de mapear'),
+          subtitle: Text('Não apaga nada'),
+        ),
+      ),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final sev = Theme.of(context).extension<SeverityColors>()!;
     final text = Theme.of(context).textTheme;
-    final state = scan.state;
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       children: [
@@ -185,16 +254,9 @@ class _DirList extends StatelessWidget {
                           ],
                         ),
                       ),
-                      Text(
-                        state.lockedDirs.contains(dir)
-                            ? '—'
-                            : state.mappedDirs[dir] == null
-                            ? '…'
-                            : formatBytes(state.mappedDirs[dir]!.total),
-                        style: text.titleMedium?.copyWith(
-                          fontFeatures: kTabular,
-                        ),
-                      ),
+                      _size(context, dir, text),
+                      const SizedBox(width: 4),
+                      _menu(dir),
                     ],
                   ),
                 ),
@@ -213,8 +275,15 @@ class _DirList extends StatelessWidget {
     TextTheme text,
   ) {
     final state = scan.state;
-    if (scan.running && state.progress.currentDir == dir) {
-      return Text('Varrendo…', style: text.bodySmall);
+    if (scan.measuring.contains(dir) ||
+        (scan.running && state.progress.currentDir == dir)) {
+      return Text('Medindo…', style: text.bodySmall);
+    }
+    if (!state.lockedDirs.contains(dir) && state.mappedDirs[dir] == null) {
+      return Text(
+        'Ainda não medido. Use o menu ⋮ para medir agora.',
+        style: text.bodySmall,
+      );
     }
     if (state.lockedDirs.contains(dir)) {
       return Row(
@@ -333,7 +402,21 @@ class _DirDetail extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          if (locked)
+          if (!locked && result == null)
+            EmptyState(
+              icon: Symbols.folder_rounded,
+              title: scan.measuring.contains(dir)
+                  ? 'Medindo…'
+                  : 'Ainda não medido',
+              body: 'O tamanho e as maiores pastas aparecem aqui.',
+              action: scan.measuring.contains(dir)
+                  ? const CircularProgressIndicator()
+                  : FilledButton.tonal(
+                      onPressed: () => scan.measureDir(dir),
+                      child: const Text('Medir agora'),
+                    ),
+            )
+          else if (locked)
             EmptyState(
               icon: Symbols.admin_panel_settings_rounded,
               title: 'Este diretório pertence ao sistema',
