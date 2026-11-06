@@ -20,6 +20,13 @@ class BuildArtifact {
   final DateTime projectModified;
 }
 
+String findPathLiteral(String path) {
+  final trimmed = path.length > 1 && path.endsWith('/')
+      ? path.substring(0, path.length - 1)
+      : path;
+  return trimmed.replaceAllMapped(RegExp(r'[\\*?\[\]]'), (m) => '\\${m[0]}');
+}
+
 class BuildFinder {
   BuildFinder(this._runner, this._du);
 
@@ -42,7 +49,7 @@ class BuildFinder {
         for (var i = 0; i < excludeRoots.length; i++) ...[
           if (i > 0) '-o',
           '-path',
-          excludeRoots[i],
+          findPathLiteral(excludeRoots[i]),
         ],
         ')',
         '-prune',
@@ -62,8 +69,9 @@ class BuildFinder {
     ], cancel: cancel);
 
     final matches = <({String path, String projectDir, BuildRule rule})>[];
+    final seen = <String>{};
     for (final path in result.stdoutText.split('\x00')) {
-      if (path.isEmpty) continue;
+      if (path.isEmpty || !seen.add(path)) continue;
       final slash = path.lastIndexOf('/');
       if (slash <= 0) continue;
       final name = path.substring(slash + 1);

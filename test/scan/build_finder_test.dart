@@ -107,4 +107,32 @@ void main() {
       expect(result.single.projectModified, mid);
     },
   );
+
+  test('exclude com barra final ainda é podado', () async {
+    file('trash/proj/package.json');
+    file('trash/proj/node_modules/a.js');
+    final result = await find(exclude: ['${root.path}/trash/']);
+    expect(result, isEmpty);
+  });
+
+  test('exclude com espaço e colchetes é literal', () async {
+    file('Dispatch [BASE]/proj/package.json');
+    file('Dispatch [BASE]/proj/node_modules/a.js');
+    file('Dispatch B/proj/package.json');
+    file('Dispatch B/proj/node_modules/a.js');
+    final result = await find(exclude: ['${root.path}/Dispatch [BASE]']);
+    expect(result.map((a) => a.path), [
+      '${root.path}/Dispatch B/proj/node_modules',
+    ]);
+  });
+
+  test('raízes sobrepostas não duplicam artefatos', () async {
+    file('projects/proj/package.json');
+    file('projects/proj/node_modules/a.js');
+    final result = await finder.find([
+      root.path,
+      '${root.path}/projects',
+    ], kDefaultBuildRules);
+    expect(result, hasLength(1));
+  });
 }
