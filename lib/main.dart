@@ -1,21 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:window_manager/legacy.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await windowManager.ensureInitialized();
-  await windowManager.waitUntilReadyToShow(
-    const WindowOptions(
-      size: Size(1280, 800),
-      minimumSize: Size(720, 560),
-      title: 'Disk Cleanup',
-    ),
-    () async {
-      await windowManager.show();
-      await windowManager.focus();
-    },
-  );
+  final window = WindowManager.instance.getCurrent();
+  if (window != null) {
+    window.title = 'Disk Cleanup';
+    window.minimumSize = const Size(720, 560).toNative();
+    window.setSize(const Size(1280, 800).toNative(), false);
+    window.center();
+    window.show();
+  }
   runApp(const DiskCleanupApp());
 }
