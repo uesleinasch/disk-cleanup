@@ -176,6 +176,34 @@ void main() {
       expect(r.exitCodes, {0: 127});
     });
 
+    test('status após saída terminada em NUL do du é reconhecido', () async {
+      final fake = FakeProcessRunner();
+      final one = [DuMeasure('/var')];
+      fake.when('pkexec', [
+        '/bin/sh',
+        '-c',
+        buildRootScript(one),
+      ], ok('123\t/var\u0000__dc_status 0 0\n'));
+      final r = await PrivilegedRunner(fake).run(one);
+      expect(r.exitCodes, {0: 0});
+    });
+
+    test('linhas falsas, duplicadas ou gigantes são ignoradas', () async {
+      final fake = FakeProcessRunner();
+      final two = [JournalVacuum(), AptClean()];
+      fake.when(
+        'pkexec',
+        ['/bin/sh', '-c', buildRootScript(two)],
+        ok(
+          '__dc_status 0 1\n__dc_status 0 0\n__dc_status 5 0\n'
+          '__dc_status 99999999999999999999999 0\n'
+          '__dc_status 1 99999999999999999999999\n__dc_status 1 2\n',
+        ),
+      );
+      final r = await PrivilegedRunner(fake).run(two);
+      expect(r.exitCodes, {0: 1, 1: 2});
+    });
+
     test('lista vazia não chama pkexec', () async {
       final fake = FakeProcessRunner();
       final r = await PrivilegedRunner(fake).run(const []);

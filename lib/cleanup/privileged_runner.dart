@@ -45,7 +45,7 @@ sealed class RootCommand {
   }
 }
 
-class JournalVacuum extends RootCommand {
+final class JournalVacuum extends RootCommand {
   JournalVacuum();
 
   @override
@@ -55,7 +55,7 @@ class JournalVacuum extends RootCommand {
   Map<String, Object?> toJson() => {'type': 'journalVacuum'};
 }
 
-class AptClean extends RootCommand {
+final class AptClean extends RootCommand {
   AptClean();
 
   @override
@@ -65,7 +65,7 @@ class AptClean extends RootCommand {
   Map<String, Object?> toJson() => {'type': 'aptClean'};
 }
 
-class SnapRemoveRevision extends RootCommand {
+final class SnapRemoveRevision extends RootCommand {
   SnapRemoveRevision(String name, String revision)
     : name = _validated(name, _snapName, 'name'),
       revision = _validated(revision, _snapRevision, 'revision');
@@ -85,7 +85,7 @@ class SnapRemoveRevision extends RootCommand {
   };
 }
 
-class DuMeasure extends RootCommand {
+final class DuMeasure extends RootCommand {
   DuMeasure(String path) : path = _validatedPath(path);
 
   final String path;
@@ -105,7 +105,7 @@ class DuMeasure extends RootCommand {
   Map<String, Object?> toJson() => {'type': 'duMeasure', 'path': path};
 }
 
-class DockerCli extends RootCommand {
+final class DockerCli extends RootCommand {
   DockerCli(this.op, List<String> ids) : ids = List.unmodifiable(ids) {
     switch (op) {
       case DockerOp.inventory:
@@ -186,9 +186,15 @@ class PrivilegedRunner {
     ]);
     final text = result.stdoutText;
     final codes = <int, int>{};
-    for (final line in text.split('\n')) {
+    var next = 0;
+    for (final line in text.split(RegExp('[\n\u0000]'))) {
       final m = _status.firstMatch(line.trimRight());
-      if (m != null) codes[int.parse(m[1]!)] = int.parse(m[2]!);
+      if (m == null || next >= cmds.length) continue;
+      final index = int.tryParse(m[1]!);
+      final code = int.tryParse(m[2]!);
+      if (index != next || code == null) continue;
+      codes[index!] = code;
+      next++;
     }
     final cancelled =
         (result.exitCode == 126 || result.exitCode == 127) && codes.isEmpty;
