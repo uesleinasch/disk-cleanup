@@ -1,19 +1,19 @@
 {
  "Images": [
   {
-   "Containers": "0",
+   "Containers": "1",
    "CreatedAt": "2026-10-01 10:00:00 -0300 -03",
    "CreatedSince": "5 weeks ago",
    "Digest": "",
    "ID": "sha256:a4c123b1612dd272d1371c17149d439536b3216fdaeeb975729fae923d5a4fd1",
    "Repository": "example/api",
    "SharedSize": "0B",
-   "Size": "1.2GB",
+   "Size": "800MB",
    "Tag": "latest",
-   "UniqueSize": "1.1GB"
+   "UniqueSize": "780MB"
   },
   {
-   "Containers": "1",
+   "Containers": "2",
    "CreatedAt": "2026-10-01 10:00:00 -0300 -03",
    "CreatedSince": "5 weeks ago",
    "Digest": "",
@@ -23,6 +23,30 @@
    "Size": "722MB",
    "Tag": "1.0",
    "UniqueSize": "700MB"
+  },
+  {
+   "Containers": "0",
+   "CreatedAt": "2026-10-01 10:00:00 -0300 -03",
+   "CreatedSince": "5 weeks ago",
+   "Digest": "",
+   "ID": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "Repository": "example/old",
+   "SharedSize": "0B",
+   "Size": "1.2GB",
+   "Tag": "1.0",
+   "UniqueSize": "1.1GB"
+  },
+  {
+   "Containers": "0",
+   "CreatedAt": "2026-10-01 10:00:00 -0300 -03",
+   "CreatedSince": "5 weeks ago",
+   "Digest": "",
+   "ID": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "Repository": "example/old",
+   "SharedSize": "0B",
+   "Size": "1.2GB",
+   "Tag": "latest",
+   "UniqueSize": "1.1GB"
   },
   {
    "Containers": "0",

@@ -6,6 +6,8 @@ import 'privileged_runner.dart';
 
 const _dfArgs = ['system', 'df', '-v', '--format', '{{json .}}'];
 
+String stripSha(String id) => id.startsWith('sha256:') ? id.substring(7) : id;
+
 final _sizePattern = RegExp(r'^([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]*)$');
 
 const _units = {
@@ -226,7 +228,7 @@ class DockerService {
       DockerOp.inventory => _dfArgs,
       DockerOp.pruneBuildCache => ['builder', 'prune', '-f'],
       DockerOp.removeContainers => ['rm', ...ids],
-      DockerOp.removeImages => ['rmi', ...ids],
+      DockerOp.removeImages => ['rmi', '-f', ...ids],
       DockerOp.removeVolumes => ['volume', 'rm', ...ids],
     };
     final result = await _runner.run('docker', args);
@@ -243,13 +245,14 @@ class DockerService {
       int size(Map<String, dynamic> e) =>
           parseDockerSize((e['Size'] as String?) ?? '');
 
-      final images = list('Images');
+      final imagesById = <String, Map<String, dynamic>>{};
+      for (final row in list('Images')) {
+        imagesById.putIfAbsent(stripSha(row['ID'] as String), () => row);
+      }
+      final images = imagesById.values.toList();
       final containers = list('Containers');
       final volumes = list('Volumes');
       final cache = list('BuildCache');
-
-      String stripSha(String id) =>
-          id.startsWith('sha256:') ? id.substring(7) : id;
 
       return DockerInventory(
         available: true,

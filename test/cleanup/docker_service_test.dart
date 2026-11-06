@@ -49,16 +49,24 @@ void main() {
 
       expect(inv.available, isTrue);
       expect(inv.needsRoot, isFalse);
-      expect(inv.imagesBytes, 1922512000);
+      expect(inv.imagesBytes, 2722512000);
       expect(inv.containersBytes, 1882100000);
       expect(inv.volumesBytes, 1553518190);
       expect(inv.buildCacheBytes, 1765800000);
       expect(inv.buildCacheReclaimable, 1465800000);
+      expect(inv.unusedImages, hasLength(2));
       expect(inv.unusedImages.map((i) => i.repoTag), [
-        'example/api:latest',
+        'example/old:1.0',
         '<none>:<none>',
       ]);
+      expect(inv.unusedImages.map((i) => i.id).toSet(), hasLength(2));
       expect(inv.unusedImages.first.bytes, 1200000000);
+      expect(inv.unusedImages.fold<int>(0, (a, i) => a + i.bytes), 1200512000);
+      expect(
+        inv.unusedImages.any((i) => i.repoTag.startsWith('example/api')),
+        isFalse,
+        reason: 'imagem usada só por container parado não é sem uso',
+      );
       expect(inv.unusedImages.first.id, matches(RegExp(r'^[a-f0-9]{64}$')));
       expect(inv.stopped.map((c) => c.name), ['app-db-1', 'app-tmp-1']);
       expect(inv.stopped.first.status, 'Exited (0) 2 weeks ago');
@@ -214,7 +222,7 @@ void main() {
       final fake = FakeProcessRunner()
         ..when('docker', ['builder', 'prune', '-f'], _ok(''))
         ..when('docker', ['rm', 'a', 'b'], _ok(''))
-        ..when('docker', ['rmi', 'a'], _ok('', code: 1))
+        ..when('docker', ['rmi', '-f', 'a'], _ok('', code: 1))
         ..when('docker', ['volume', 'rm', 'v'], _ok(''));
       final s = _service(fake);
       expect(await s.execute(DockerOp.pruneBuildCache, []), isTrue);

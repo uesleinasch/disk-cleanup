@@ -101,7 +101,7 @@ void main() {
       );
       expect(
         DockerCli(DockerOp.removeImages, ['abcdef123456']).toShell(),
-        "/usr/bin/docker rmi 'abcdef123456'",
+        "/usr/bin/docker rmi -f 'abcdef123456'",
       );
       expect(
         DockerCli(DockerOp.removeVolumes, ['my_vol-1.x']).toShell(),

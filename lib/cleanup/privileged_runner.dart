@@ -139,7 +139,7 @@ final class DockerCli extends RootCommand {
         "/usr/bin/docker system df -v --format '{{json .}}'",
       DockerOp.pruneBuildCache => '/usr/bin/docker builder prune -f',
       DockerOp.removeContainers => '/usr/bin/docker rm ${quoted()}',
-      DockerOp.removeImages => '/usr/bin/docker rmi ${quoted()}',
+      DockerOp.removeImages => '/usr/bin/docker rmi -f ${quoted()}',
       DockerOp.removeVolumes => '/usr/bin/docker volume rm ${quoted()}',
     };
   }
