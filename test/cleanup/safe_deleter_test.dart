@@ -83,4 +83,51 @@ void main() {
     );
     expect(File('${fora.path}/arquivo').existsSync(), isTrue);
   });
+
+  test('recusa ancestral de caminho protegido', () async {
+    Directory('${tmp.path}/home/proj').createSync(recursive: true);
+    final d = SafeDeleter(
+      allowedRoots: [tmp.path],
+      protectedPaths: ['${tmp.path}/home/proj'],
+    );
+    expect(await d.delete('${tmp.path}/home'), DeleteOutcome.refused);
+    expect(Directory('${tmp.path}/home/proj').existsSync(), isTrue);
+  });
+
+  test('recusa irmão com prefixo comum da raiz', () async {
+    Directory('${tmp.path}/a').createSync();
+    final x = File('${tmp.path}/ab/x')..createSync(recursive: true);
+    final d = SafeDeleter(allowedRoots: ['${tmp.path}/a'], protectedPaths: []);
+    expect(await d.delete(x.path), DeleteOutcome.refused);
+    expect(x.existsSync(), isTrue);
+  });
+
+  test('recusa alvo alcançado por symlink de diretório que escapa', () async {
+    final victim = File('${tmp.path}/outside/victim')
+      ..createSync(recursive: true);
+    Directory('${tmp.path}/root').createSync();
+    Link('${tmp.path}/root/link').createSync('../outside');
+    final d = SafeDeleter(
+      allowedRoots: ['${tmp.path}/root'],
+      protectedPaths: [],
+    );
+    expect(
+      await d.delete('${tmp.path}/root/link/victim'),
+      DeleteOutcome.refused,
+    );
+    expect(victim.existsSync(), isTrue);
+  });
+
+  test('symlink de diretório pai que permanece dentro da raiz apaga', () async {
+    final real = Directory('${tmp.path}/root/real')
+      ..createSync(recursive: true);
+    final f = File('${real.path}/f')..createSync();
+    Link('${tmp.path}/root/alias').createSync(real.path);
+    final d = SafeDeleter(
+      allowedRoots: ['${tmp.path}/root'],
+      protectedPaths: [],
+    );
+    expect(await d.delete('${tmp.path}/root/alias/f'), DeleteOutcome.deleted);
+    expect(f.existsSync(), isFalse);
+  });
 }

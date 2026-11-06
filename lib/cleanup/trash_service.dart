@@ -97,7 +97,13 @@ class TrashService {
           FileSystemEntityType.notFound) {
         continue;
       }
-      final info = _parseInfo(await entity.readAsString());
+      final String text;
+      try {
+        text = await entity.readAsString();
+      } on FileSystemException {
+        continue;
+      }
+      final info = _parseInfo(text);
       if (info == null) continue;
       parsed.add((name: name, path: info.path, date: info.date));
     }
@@ -224,7 +230,7 @@ class TrashService {
       if (line.startsWith('Path=')) {
         try {
           path = Uri.decodeComponent(line.substring(5).trim());
-        } on ArgumentError {
+        } on FormatException {
           return null;
         }
       } else if (line.startsWith('DeletionDate=')) {

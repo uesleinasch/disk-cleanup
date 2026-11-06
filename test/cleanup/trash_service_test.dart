@@ -211,4 +211,31 @@ void main() {
       expect(Directory('$trashDir/info').listSync(), isEmpty);
     },
   );
+
+  test('list ignora entradas malformadas e mantém as válidas', () async {
+    final s = service();
+    final e = (await s.moveToTrash(mk('a/ok.txt').path))!;
+    mk('Trash/files/bad1.bin');
+    mk('Trash/files/bad2.bin');
+    File('$trashDir/info/bad1.bin.trashinfo').writeAsStringSync(
+      '[Trash Info]\nPath=/tmp/x/%FF.bin\nDeletionDate=2026-01-01T00:00:00\n',
+    );
+    File('$trashDir/info/bad2.bin.trashinfo').writeAsBytesSync([
+      ...utf8.encode('[Trash Info]\nPath=/x/'),
+      0xff,
+      0xfe,
+      ...utf8.encode('\nDeletionDate=2026-01-01T00:00:00\n'),
+    ]);
+    final p1 = '$trashDir/files/${e.trashedName}';
+    runner.when('du', [
+      '-sx',
+      '-B1',
+      '-0',
+      p1,
+    ], RunResult(0, utf8.encode('4096\t$p1\x00'), ''));
+
+    final items = await s.list();
+
+    expect(items.map((i) => i.name), ['ok.txt']);
+  });
 }
