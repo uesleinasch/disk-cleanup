@@ -561,9 +561,9 @@ Mais: `SystemProcessRunner` rodando `sleep 5` com um `CancelToken` cancelado ap�
     - o mesmo build com 30 dias dá true;
     - um item `attention` dá false;
     - `appRunning: true` dá false.
-  - `composeConsumers`, com `mapped` = {`/h`: filhos `/h/ueslei` (61,2e9), `/h/JACTO` (46,2e9), `/h/.cache` (38,7e9)}, {`/h/JACTO`: total 46,2e9} e `dockerBytes` 83,8e9:
-    - a ordem é Docker, ueslei, JACTO, .cache;
-    - `/h/JACTO` aparece uma vez só;
+  - `composeConsumers`, com `mapped` = {`/h`: filhos `/h/ueslei` (61,2e9), `/h/trabalho` (46,2e9), `/h/.cache` (38,7e9)}, {`/h/trabalho`: total 46,2e9} e `dockerBytes` 83,8e9:
+    - a ordem é Docker, ueslei, trabalho, .cache;
+    - `/h/trabalho` aparece uma vez só;
     - o rótulo do Docker é "Docker" com caminho `/var/lib/docker`.
   - `ScanController.scan()` com serviços falsos:
     - termina com `progress.running == false`, `updatedAt` preenchido e um snapshot salvo;

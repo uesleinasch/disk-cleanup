@@ -70,14 +70,14 @@ void main() {
         '/h': const DuResult(
           entries: [
             DirEntrySize('/h/ueslei', 61200000000),
-            DirEntrySize('/h/JACTO', 46200000000),
+            DirEntrySize('/h/trabalho', 46200000000),
             DirEntrySize('/h/.cache', 38700000000),
           ],
           total: 146100000000,
           errors: 0,
           permissionDenied: false,
         ),
-        '/h/JACTO': const DuResult(
+        '/h/trabalho': const DuResult(
           entries: [],
           total: 46200000000,
           errors: 0,
@@ -89,7 +89,7 @@ void main() {
     expect(consumers.map((c) => c.label), [
       'Docker',
       'ueslei',
-      'JACTO',
+      'trabalho',
       '.cache',
     ]);
     expect(consumers.first.path, '/var/lib/docker');
