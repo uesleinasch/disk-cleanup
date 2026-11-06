@@ -183,8 +183,8 @@ class Settings {
               for (final r in rules)
                 BuildRule.fromJson((r! as Map).cast<String, Object?>()),
             ],
-      themeMode: ThemeMode.values.asNameMap()[json['themeMode']] ??
-          defaults.themeMode,
+      themeMode:
+          ThemeMode.values.asNameMap()[json['themeMode']] ?? defaults.themeMode,
       bannerSnoozedUntil: snoozed == null ? null : DateTime.parse(snoozed),
       window: window == null ? null : WindowBounds.fromJson(window),
     );

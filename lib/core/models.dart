@@ -24,7 +24,10 @@ sealed class CleanupAction {
       'delete' => DeletePathsAction(strings('paths')),
       'trash' => TrashPathsAction(strings('paths')),
       'emptyTrash' => const EmptyTrashAction(),
-      'root' => const RootAction([]),
+      'root' => RootAction([
+        for (final c in json['commands'] as List)
+          RootCommand.fromJson(Map<String, Object?>.from(c as Map)),
+      ]),
       'docker' => DockerAction(
         DockerOp.values.byName(json['op'] as String),
         strings('ids'),
@@ -62,7 +65,10 @@ class RootAction extends CleanupAction {
   final List<RootCommand> commands;
 
   @override
-  Map<String, Object?> toJson() => {'type': 'root', 'commands': const []};
+  Map<String, Object?> toJson() => {
+    'type': 'root',
+    'commands': [for (final c in commands) c.toJson()],
+  };
 }
 
 class DockerAction extends CleanupAction {

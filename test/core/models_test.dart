@@ -1,3 +1,4 @@
+import 'package:disk_cleanup/cleanup/privileged_runner.dart';
 import 'package:disk_cleanup/core/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -30,6 +31,7 @@ void main() {
       const TrashPathsAction(['/c']),
       const EmptyTrashAction(),
       const DockerAction(DockerOp.removeImages, ['i1', 'i2']),
+      RootAction([JournalVacuum(), SnapRemoveRevision('core20', '1')]),
     ];
     for (final a in actions) {
       final back = CleanupItem.fromJson(item(a).toJson());
@@ -38,6 +40,20 @@ void main() {
       expect(back.lastModified, DateTime.utc(2026, 1, 2, 3));
       expect(back.risk, RiskLevel.attention);
     }
+    final root =
+        CleanupItem.fromJson(
+              item(
+                RootAction([
+                  JournalVacuum(),
+                  SnapRemoveRevision('core20', '1'),
+                ]),
+              ).toJson(),
+            ).action
+            as RootAction;
+    expect(root.commands.map((c) => c.toShell()), [
+      '/usr/bin/journalctl --vacuum-size=500M',
+      "/usr/bin/snap remove 'core20' --revision='1'",
+    ]);
   });
 
   test('lastModified e path nulos sobrevivem ao round-trip', () {
