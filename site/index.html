@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>disk-cleanup</title>
+<meta name="description" content="Gerenciador de espaço em disco para Linux: veja o que ocupa espaço e limpe caches, builds, lixeira e Docker com segurança.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Roboto',sans-serif;background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface);line-height:1.5}
+  a{color:var(--md-sys-color-primary)}
+  .wrap{max-width:960px;margin:0 auto;padding:0 16px}
+  header{padding:56px 0 40px;background:var(--md-sys-color-surface-container-low)}
+  .brand{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+  .brand img{width:48px;height:48px}
+  .brand span{font-size:22px;font-weight:500}
+  h1{font-size:clamp(28px,5vw,45px);line-height:1.15;font-weight:400;margin:0 0 16px}
+  .lead{font-size:18px;color:var(--md-sys-color-on-surface-variant);margin:0 0 28px;max-width:640px}
+  .actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .btn{display:inline-flex;align-items:center;gap:8px;height:48px;padding:0 24px;border-radius:999px;font-weight:500;text-decoration:none;font-size:15px}
+  .btn-filled{background:var(--md-sys-color-primary);color:var(--md-sys-color-on-primary)}
+  .btn-filled:hover{box-shadow:inset 0 0 0 100vmax color-mix(in srgb,var(--md-sys-color-on-primary) 8%,transparent)}
+  .btn-outlined{border:1px solid var(--md-sys-color-outline);color:var(--md-sys-color-primary)}
+  .meta{font-size:14px;color:var(--md-sys-color-on-surface-variant)}
+  main section{padding:40px 0}
+  h2{font-size:24px;font-weight:400;margin:0 0 16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+  .card{background:var(--md-sys-color-surface-container-low);border-radius:16px;padding:20px}
+  .card h3{margin:0 0 6px;font-size:16px;font-weight:500}
+  .card p{margin:0;color:var(--md-sys-color-on-surface-variant);font-size:14px}
+  code,.mono{font-family:'Roboto Mono',monospace;font-size:14px}
+  pre{background:var(--md-sys-color-surface-container-highest);padding:16px;border-radius:12px;overflow-x:auto}
+  .releases{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  .releases li{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:14px 16px;border:1px solid var(--md-sys-color-outline-variant);border-radius:12px}
+  .releases .name{font-weight:500;flex:1 1 160px}
+  .releases .date{color:var(--md-sys-color-on-surface-variant);font-size:14px}
+  .note{font-size:14px;color:var(--md-sys-color-on-surface-variant)}
+  footer{padding:32px 0 48px;font-size:14px;color:var(--md-sys-color-on-surface-variant)}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="brand"><img src="icon.svg" alt=""><span>disk-cleanup</span></div>
+    <h1>Descubra o que está enchendo seu disco e libere espaço sem medo.</h1>
+    <p class="lead">Um gerenciador de espaço para Linux que mostra o estado do disco, avisa quando ele está ficando cheio e limpa caches, builds, lixeira e Docker, sempre explicando o risco antes de apagar.</p>
+    <div class="actions">
+      <a class="btn btn-filled" id="download" href="https://github.com/uesleinasch/disk-cleanup/releases/latest">Baixar a versão mais recente</a>
+      <a class="btn btn-outlined" href="https://github.com/uesleinasch/disk-cleanup">Código no GitHub</a>
+      <span class="meta" id="latest-meta">AppImage para Linux x86_64</span>
+    </div>
+  </div>
+</header>
+<main class="wrap">
+  <section>
+    <h2>O que ele faz</h2>
+    <div class="grid">
+      <div class="card"><h3>Visão geral e alertas</h3><p>Espaço livre, os maiores consumidores e um alerta quando o disco passa do limite de atenção ou crítico.</p></div>
+      <div class="card"><h3>Caches e builds</h3><p>uv, pip, npm, Gradle, navegadores e pastas como node_modules e target, reconhecidas só quando o projeto está ao lado.</p></div>
+      <div class="card"><h3>Docker</h3><p>Build cache, containers parados, imagens e volumes sem uso, com aviso do que se perde em cada grupo.</p></div>
+      <div class="card"><h3>Arquivos grandes</h3><p>Lista o que passa de 1 GB nos diretórios que você mapear. Mover para a lixeira tem Desfazer.</p></div>
+      <div class="card"><h3>Seguro por padrão</h3><p>Toda exclusão abre um diálogo com o risco e quanto espaço volta. O que exige root pede a senha uma vez por lote.</p></div>
+    </div>
+  </section>
+  <section>
+    <h2>Versões</h2>
+    <ul class="releases" id="releases"><li class="note">Carregando versões…</li></ul>
+  </section>
+  <section>
+    <h2>Como instalar</h2>
+    <pre><code>chmod +x disk-cleanup-*-x86_64.AppImage
+./disk-cleanup-*-x86_64.AppImage</code></pre>
+    <p class="note">Requer Ubuntu 22.04 ou mais novo (x86_64). Se o AppImage não abrir, instale <code>libfuse2</code> ou rode com <code>--appimage-extract-and-run</code>. Os tamanhos aparecem em GB decimais; o <code>df -h</code> mostra GiB.</p>
+  </section>
+</main>
+<footer class="wrap">Licença MIT · <a href="https://github.com/uesleinasch/disk-cleanup">uesleinasch/disk-cleanup</a></footer>
+<script src="app.js"></script>
+</body>
+</html>
