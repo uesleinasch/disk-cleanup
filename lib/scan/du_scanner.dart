@@ -30,11 +30,14 @@ class DuScanner {
 
   Future<DuResult> childrenSizes(String dir, {CancelToken? cancel}) async {
     _throwIfCancelled(cancel);
-    final result = await _runner.run(
-      'du',
-      ['-x', '-a', '-d1', '-B1', '-0', dir],
-      cancel: cancel,
-    );
+    final result = await _runner.run('du', [
+      '-x',
+      '-a',
+      '-d1',
+      '-B1',
+      '-0',
+      dir,
+    ], cancel: cancel);
     final self = _normalize(dir);
     final entries = <DirEntrySize>[];
     var total = 0;
@@ -68,22 +71,20 @@ class DuScanner {
   }) async {
     if (paths.isEmpty) return {};
     _throwIfCancelled(cancel);
-    final result = await _runner.run(
-      'du',
-      ['-sx', '-B1', '-0', ...paths],
-      cancel: cancel,
-    );
-    return {
-      for (final r in _records(result)) _normalize(r.path): r.bytes,
-    };
+    final result = await _runner.run('du', [
+      '-sx',
+      '-B1',
+      '-0',
+      ...paths,
+    ], cancel: cancel);
+    return {for (final r in _records(result)) _normalize(r.path): r.bytes};
   }
 
   static void _throwIfCancelled(CancelToken? cancel) {
     if (cancel?.isCancelled ?? false) throw const ScanCancelled();
   }
 
-  static String _normalize(String path) =>
-      path.length > 1 && path.endsWith('/')
+  static String _normalize(String path) => path.length > 1 && path.endsWith('/')
       ? path.substring(0, path.length - 1)
       : path;
 

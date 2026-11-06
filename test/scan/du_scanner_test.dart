@@ -33,35 +33,41 @@ void main() {
     expect(r.permissionDenied, isFalse);
   });
 
-  test('saída parcial com erro conta errors e não é permissionDenied', () async {
-    final fake = FakeProcessRunner()
-      ..when(
-        'du',
-        childArgs,
-        _out(
-          1,
-          '1000\t/h/a\x003000\t/h\x00',
-          "du: cannot read directory '/h/x': Permission denied\n",
-        ),
-      );
-    final r = await DuScanner(fake).childrenSizes('/h');
-    expect(r.entries, hasLength(1));
-    expect(r.errors, 1);
-    expect(r.permissionDenied, isFalse);
-  });
+  test(
+    'saída parcial com erro conta errors e não é permissionDenied',
+    () async {
+      final fake = FakeProcessRunner()
+        ..when(
+          'du',
+          childArgs,
+          _out(
+            1,
+            '1000\t/h/a\x003000\t/h\x00',
+            "du: cannot read directory '/h/x': Permission denied\n",
+          ),
+        );
+      final r = await DuScanner(fake).childrenSizes('/h');
+      expect(r.entries, hasLength(1));
+      expect(r.errors, 1);
+      expect(r.permissionDenied, isFalse);
+    },
+  );
 
-  test('sem registro do próprio dir e Permission denied marca negado', () async {
-    final fake = FakeProcessRunner()
-      ..when(
-        'du',
-        childArgs,
-        _out(1, '', "du: cannot read directory '/h': Permission denied\n"),
-      );
-    final r = await DuScanner(fake).childrenSizes('/h');
-    expect(r.permissionDenied, isTrue);
-    expect(r.total, 0);
-    expect(r.entries, isEmpty);
-  });
+  test(
+    'sem registro do próprio dir e Permission denied marca negado',
+    () async {
+      final fake = FakeProcessRunner()
+        ..when(
+          'du',
+          childArgs,
+          _out(1, '', "du: cannot read directory '/h': Permission denied\n"),
+        );
+      final r = await DuScanner(fake).childrenSizes('/h');
+      expect(r.permissionDenied, isTrue);
+      expect(r.total, 0);
+      expect(r.entries, isEmpty);
+    },
+  );
 
   test('token já cancelado lança ScanCancelled sem chamar du', () async {
     final fake = FakeProcessRunner();
@@ -75,11 +81,13 @@ void main() {
 
   test('sizesOf mede caminhos e omite ausentes', () async {
     final fake = FakeProcessRunner()
-      ..when(
-        'du',
-        ['-sx', '-B1', '-0', '/h/a/', '/h/b'],
-        _out(1, '10\t/h/a\x00', "du: cannot access '/h/b': No such file\n"),
-      );
+      ..when('du', [
+        '-sx',
+        '-B1',
+        '-0',
+        '/h/a/',
+        '/h/b',
+      ], _out(1, '10\t/h/a\x00', "du: cannot access '/h/b': No such file\n"));
     final r = await DuScanner(fake).sizesOf(['/h/a/', '/h/b']);
     expect(r, {'/h/a': 10});
   });
