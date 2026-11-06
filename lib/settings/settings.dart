@@ -132,6 +132,7 @@ class Settings {
     ThemeMode? themeMode,
     DateTime? bannerSnoozedUntil,
     WindowBounds? window,
+    bool clearSnooze = false,
   }) => Settings(
     mappedDirs: mappedDirs ?? this.mappedDirs,
     warnPercent: warnPercent ?? this.warnPercent,
@@ -142,7 +143,9 @@ class Settings {
     activeProjectDays: activeProjectDays ?? this.activeProjectDays,
     buildRules: buildRules ?? this.buildRules,
     themeMode: themeMode ?? this.themeMode,
-    bannerSnoozedUntil: bannerSnoozedUntil ?? this.bannerSnoozedUntil,
+    bannerSnoozedUntil: clearSnooze
+        ? null
+        : bannerSnoozedUntil ?? this.bannerSnoozedUntil,
     window: window ?? this.window,
   );
 

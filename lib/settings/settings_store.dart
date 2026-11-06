@@ -28,12 +28,22 @@ class SettingsStore {
     }
   }
 
-  Future<void> save(Settings s) async {
+  static final _queues = <String, Future<void>>{};
+
+  Future<void> save(Settings s) {
+    final previous = _queues[filePath] ?? Future<void>.value();
+    final next = previous.catchError((Object _) {}).then((_) => _write(s));
+    _queues[filePath] = next;
+    return next;
+  }
+
+  Future<void> _write(Settings s) async {
     final file = File(filePath);
     await file.parent.create(recursive: true);
-    final tmp = File('$filePath.tmp');
+    final tmp = File('$filePath.$pid.tmp');
     await tmp.writeAsString(
       const JsonEncoder.withIndent('  ').convert(s.toJson()),
+      flush: true,
     );
     await tmp.rename(filePath);
   }

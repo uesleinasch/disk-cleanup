@@ -1,25 +1,23 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
+import 'services.dart';
 import 'settings/settings.dart';
-import 'settings/settings_store.dart';
+import 'settings/settings_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final home = Platform.environment['HOME'] ?? '/';
-  final store = SettingsStore(
-    SettingsStore.defaultPath(Platform.environment, home),
-  );
-  var settings = await store.load(home);
+  final services = Services.system();
+  final settings = SettingsController(services.settingsStore, services.home);
+  await settings.load();
   final window = WindowManager.instance.getCurrent();
   if (window != null) {
     window.title = 'Disk Cleanup';
     window.minimumSize = const Size(720, 560).toNative();
-    final saved = settings.window;
+    final saved = settings.value.window;
     if (saved == null) {
       window.setSize(const Size(1280, 800).toNative(), false);
       window.center();
@@ -33,17 +31,12 @@ Future<void> main() async {
       if (saved.maximized) window.maximize();
     }
     window.show();
-    _persistGeometry(window, store, () => settings, (s) => settings = s);
+    _persistGeometry(window, settings);
   }
-  runApp(const DiskCleanupApp());
+  runApp(DiskCleanupApp(services: services, settings: settings));
 }
 
-void _persistGeometry(
-  Window window,
-  SettingsStore store,
-  Settings Function() current,
-  void Function(Settings) update,
-) {
+void _persistGeometry(Window window, SettingsController settings) {
   Timer? debounce;
   WindowManager.instance.addListener((event) {
     switch (event) {
@@ -54,7 +47,7 @@ void _persistGeometry(
         debounce?.cancel();
         debounce = Timer(const Duration(milliseconds: 500), () {
           final maximized = window.isMaximized;
-          final previous = current().window;
+          final previous = settings.value.window;
           final rect = maximized && previous != null
               ? Rect.fromLTWH(
                   previous.x,
@@ -63,17 +56,19 @@ void _persistGeometry(
                   previous.height,
                 )
               : window.bounds.toRect();
-          final next = current().copyWith(
-            window: WindowBounds(
-              x: rect.left,
-              y: rect.top,
-              width: rect.width,
-              height: rect.height,
-              maximized: maximized,
+          unawaited(
+            settings.update(
+              (s) => s.copyWith(
+                window: WindowBounds(
+                  x: rect.left,
+                  y: rect.top,
+                  width: rect.width,
+                  height: rect.height,
+                  maximized: maximized,
+                ),
+              ),
             ),
           );
-          update(next);
-          unawaited(store.save(next));
         });
       default:
         break;
