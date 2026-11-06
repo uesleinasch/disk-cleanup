@@ -1,13 +1,16 @@
 String formatBytes(int bytes) {
-  if (bytes < 1000) return '$bytes B';
+  final sign = bytes < 0 ? '-' : '';
+  final magnitude = bytes.abs();
+  if (magnitude < 1000) return '$bytes B';
   const units = ['KB', 'MB', 'GB', 'TB'];
-  var value = bytes / 1000;
+  var value = magnitude / 1000;
   var i = 0;
-  while (value >= 1000 && i < units.length - 1) {
+  while (i < units.length - 1 &&
+      double.parse(value.toStringAsFixed(1)) >= 1000) {
     value /= 1000;
     i++;
   }
-  return '${value.toStringAsFixed(1).replaceFirst('.', ',')} ${units[i]}';
+  return '$sign${value.toStringAsFixed(1).replaceFirst('.', ',')} ${units[i]}';
 }
 
 String formatBytesExact(int bytes) {

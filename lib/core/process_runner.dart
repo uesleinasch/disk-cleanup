@@ -61,20 +61,38 @@ class SystemProcessRunner implements ProcessRunner {
     } on ProcessException catch (e) {
       return RunResult(127, const [], e.message);
     }
-    final removeListener = cancel?.onCancel(
-      () => process.kill(ProcessSignal.sigkill),
-    );
+    final cancelled = Completer<void>();
+    void onCancel() {
+      process.kill(ProcessSignal.sigkill);
+      if (!cancelled.isCompleted) cancelled.complete();
+    }
+
+    final removeListener = cancel?.onCancel(onCancel);
+    if (cancel?.isCancelled ?? false) onCancel();
+
+    final out = <int>[];
+    final err = <int>[];
+    final outSub = process.stdout.listen(out.addAll);
+    final errSub = process.stderr.listen(err.addAll);
     try {
-      final out = <int>[];
-      final outDone = process.stdout.forEach(out.addAll);
-      final errFuture = process.stderr.transform(utf8.decoder).join();
-      final code = await process.exitCode;
-      await outDone;
-      final err = await errFuture;
-      if (cancel?.isCancelled ?? false) throw const ScanCancelled();
-      return RunResult(code, out, err);
+      final code = Future.wait<void>([
+        process.exitCode,
+        outSub.asFuture<void>(),
+        errSub.asFuture<void>(),
+      ]);
+      await Future.any<void>([code, cancelled.future]);
+      if (cancelled.isCompleted) throw const ScanCancelled();
+      return RunResult(
+        await process.exitCode,
+        out,
+        utf8.decode(err, allowMalformed: true),
+      );
     } finally {
       removeListener?.call();
+      if (cancelled.isCompleted) {
+        unawaited(outSub.cancel());
+        unawaited(errSub.cancel());
+      }
     }
   }
 }

@@ -21,6 +21,29 @@ void main() {
     expect(sw.elapsed, lessThan(const Duration(seconds: 1)));
   });
 
+  test('token já cancelado durante o start ainda aborta rápido', () async {
+    final token = CancelToken();
+    final sw = Stopwatch()..start();
+    final future = SystemProcessRunner().run('sleep', ['5'], cancel: token);
+    token.cancel();
+    await expectLater(future, throwsA(isA<ScanCancelled>()));
+    expect(sw.elapsed, lessThan(const Duration(seconds: 1)));
+  });
+
+  test('neto segurando o pipe não trava o cancelamento', () async {
+    final token = CancelToken();
+    Future.delayed(const Duration(milliseconds: 100), token.cancel);
+    final sw = Stopwatch()..start();
+    await expectLater(
+      SystemProcessRunner().run('/bin/sh', [
+        '-c',
+        'sleep 30 & sleep 30',
+      ], cancel: token),
+      throwsA(isA<ScanCancelled>()),
+    );
+    expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
+  });
+
   test('binário ausente vira exitCode 127', () async {
     final r = await SystemProcessRunner().run('binario-que-nao-existe', []);
     expect(r.exitCode, 127);

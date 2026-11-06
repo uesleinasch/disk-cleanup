@@ -10,6 +10,9 @@ void main() {
     expect(formatBytes(1000), '1,0 KB');
     expect(formatBytes(1500000), '1,5 MB');
     expect(formatBytes(1250000000000), '1,3 TB');
+    expect(formatBytes(999999), '1,0 MB');
+    expect(formatBytes(999950000), '1,0 GB');
+    expect(formatBytes(-5000000), '-5,0 MB');
   });
 
   test('formatBytesExact usa ponto como separador de milhar', () {
