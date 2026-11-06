@@ -226,6 +226,15 @@ void main() {
       0xfe,
       ...utf8.encode('\nDeletionDate=2026-01-01T00:00:00\n'),
     ]);
+    for (final (name, path) in [
+      ('bad3.bin', '/x/%G1.bin'),
+      ('bad4.bin', '/x/%'),
+    ]) {
+      mk('Trash/files/$name');
+      File('$trashDir/info/$name.trashinfo').writeAsStringSync(
+        '[Trash Info]\nPath=$path\nDeletionDate=2026-01-01T00:00:00\n',
+      );
+    }
     final p1 = '$trashDir/files/${e.trashedName}';
     runner.when('du', [
       '-sx',

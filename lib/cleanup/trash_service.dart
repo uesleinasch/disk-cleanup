@@ -232,6 +232,8 @@ class TrashService {
           path = Uri.decodeComponent(line.substring(5).trim());
         } on FormatException {
           return null;
+        } on ArgumentError {
+          return null;
         }
       } else if (line.startsWith('DeletionDate=')) {
         date = DateTime.tryParse(line.substring(13).trim());
