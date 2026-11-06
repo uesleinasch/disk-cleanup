@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=disk-cleanup
+GenericName=Gerenciador de espaço em disco
+Comment=Gerenciador de espaço em disco
+Exec=disk_cleanup
+Icon=disk-cleanup
+Terminal=false
+Categories=System;Utility;
+Keywords=disco;espaço;limpeza;cache;docker;
+StartupWMClass=disk_cleanup

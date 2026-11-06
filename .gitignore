@@ -36,4 +36,10 @@ app.*.map.json
 # Superpowers (artefatos locais)
 .superpowers/
 
+
+# Empacotamento
+/AppDir/
+/dist/
+/.cache/
+
 !/docs/
