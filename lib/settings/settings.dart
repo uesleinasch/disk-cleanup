@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'backup_settings.dart';
+
+export 'backup_settings.dart';
+
 class BuildRule {
   const BuildRule(this.dirName, this.marker);
 
@@ -104,6 +108,7 @@ class Settings {
     this.themeMode = ThemeMode.system,
     this.bannerSnoozedUntil,
     this.window,
+    this.backup = const BackupSettings(),
   });
 
   factory Settings.defaults(String home) => Settings(mappedDirs: [home]);
@@ -119,6 +124,7 @@ class Settings {
   final ThemeMode themeMode;
   final DateTime? bannerSnoozedUntil;
   final WindowBounds? window;
+  final BackupSettings backup;
 
   Settings copyWith({
     List<String>? mappedDirs,
@@ -132,6 +138,7 @@ class Settings {
     ThemeMode? themeMode,
     DateTime? bannerSnoozedUntil,
     WindowBounds? window,
+    BackupSettings? backup,
     bool clearSnooze = false,
   }) => Settings(
     mappedDirs: mappedDirs ?? this.mappedDirs,
@@ -147,6 +154,7 @@ class Settings {
         ? null
         : bannerSnoozedUntil ?? this.bannerSnoozedUntil,
     window: window ?? this.window,
+    backup: backup ?? this.backup,
   );
 
   Map<String, Object?> toJson() => {
@@ -161,6 +169,7 @@ class Settings {
     'themeMode': themeMode.name,
     'bannerSnoozedUntil': bannerSnoozedUntil?.toIso8601String(),
     'window': window?.toJson(),
+    'backup': backup.toJson(),
   };
 
   factory Settings.fromJson(Map<String, Object?> json, String home) {
@@ -169,6 +178,7 @@ class Settings {
     final window = json['window'] as Map<String, Object?>?;
     final rules = json['buildRules'] as List<Object?>?;
     final dirs = json['mappedDirs'] as List<Object?>?;
+    final backup = json['backup'] as Map<String, Object?>?;
     return Settings(
       mappedDirs: dirs == null ? defaults.mappedDirs : dirs.cast<String>(),
       warnPercent: json['warnPercent'] as int? ?? defaults.warnPercent,
@@ -190,6 +200,9 @@ class Settings {
           ThemeMode.values.asNameMap()[json['themeMode']] ?? defaults.themeMode,
       bannerSnoozedUntil: snoozed == null ? null : DateTime.parse(snoozed),
       window: window == null ? null : WindowBounds.fromJson(window),
+      backup: backup == null
+          ? defaults.backup
+          : BackupSettings.fromJson(backup),
     );
   }
 
@@ -206,7 +219,8 @@ class Settings {
       _listEquals(other.buildRules, buildRules) &&
       other.themeMode == themeMode &&
       other.bannerSnoozedUntil == bannerSnoozedUntil &&
-      other.window == window;
+      other.window == window &&
+      other.backup == backup;
 
   @override
   int get hashCode => Object.hash(
@@ -221,5 +235,6 @@ class Settings {
     themeMode,
     bannerSnoozedUntil,
     window,
+    backup,
   );
 }
