@@ -4,6 +4,7 @@ import 'package:disk_cleanup/app.dart';
 import 'package:disk_cleanup/cleanup/docker_service.dart';
 import 'package:disk_cleanup/cleanup/privileged_runner.dart';
 import 'package:disk_cleanup/core/models.dart';
+import 'package:disk_cleanup/core/process_runner.dart';
 import 'package:disk_cleanup/disk/alert.dart';
 import 'package:disk_cleanup/disk/disk_info.dart';
 import 'package:disk_cleanup/scan/du_scanner.dart';
@@ -141,9 +142,23 @@ void main() {
     tmp = Directory.systemTemp.createTempSync('dc_app_');
     final home = p.join(tmp.path, 'home')..toString();
     Directory(home).createSync();
+    final runner = FakeProcessRunner()
+      ..when('lsblk', const [
+        '-J',
+        '-b',
+        '-p',
+        '-o',
+        'NAME,LABEL,UUID,FSTYPE,HOTPLUG,SIZE,FSAVAIL,MOUNTPOINT',
+      ], RunResult(0, '{"blockdevices": []}'.codeUnits, ''))
+      ..when('git', const [
+        'config',
+        '--global',
+        '--get-regexp',
+        r'^(includeif\..*\.path|core\.excludesfile)$',
+      ], const RunResult(1, [], ''));
     services = Services(
       home: home,
-      runner: FakeProcessRunner(),
+      runner: runner,
       settingsStore: SettingsStore(p.join(tmp.path, 'settings.json')),
       snapshots: SnapshotStore(p.join(tmp.path, 'snap')),
       trashDir: p.join(home, '.local', 'share', 'Trash'),
@@ -182,7 +197,7 @@ void main() {
   }
 
   for (final size in const [Size(720, 560), Size(1920, 1080)]) {
-    testWidgets('navega pelas 6 telas sem overflow em $size', (t) async {
+    testWidgets('navega pelas 7 telas sem overflow em $size', (t) async {
       await boot(t, size);
       expect(find.text('Pode liberar com segurança'), findsOneWidget);
       expect(find.textContaining('Espaço em disco baixo'), findsOneWidget);
@@ -192,6 +207,7 @@ void main() {
         LogicalKeyboardKey.digit4,
         LogicalKeyboardKey.digit5,
         LogicalKeyboardKey.digit6,
+        LogicalKeyboardKey.digit7,
         LogicalKeyboardKey.digit1,
       ];
       for (final k in keys) {

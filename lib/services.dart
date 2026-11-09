@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'backup/backup_services.dart';
 import 'cleanup/docker_service.dart';
 import 'cleanup/privileged_runner.dart';
 import 'cleanup/safe_deleter.dart';
@@ -24,7 +25,9 @@ class Services {
     required this.snapshots,
     required this.trashDir,
     DateTime Function()? now,
+    BackupServices? backup,
   }) : now = now ?? DateTime.now,
+       backup = backup ?? BackupServices.system(home, runner),
        du = DuScanner(runner),
        disk = DiskInfoService(runner),
        root = PrivilegedRunner(runner) {
@@ -66,6 +69,7 @@ class Services {
   late final SystemInventory system;
   late final TrashService trash;
   late final DockerService docker;
+  final BackupServices backup;
 
   SafeDeleter deleter(Settings s) => SafeDeleter(
     allowedRoots: [home, ...s.mappedDirs],

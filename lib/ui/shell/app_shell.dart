@@ -12,6 +12,7 @@ enum AppDestination {
   largeFiles('Arquivos grandes', Symbols.description_rounded),
   cleanup('Limpeza', Symbols.cleaning_services_rounded),
   docker('Docker', Symbols.deployed_code_rounded),
+  backup('Backup', Symbols.backup_rounded),
   settings('Configurações', Symbols.settings_rounded);
 
   const AppDestination(this.label, this.icon);
@@ -41,6 +42,7 @@ class AppShell extends StatelessWidget {
     LogicalKeyboardKey.digit4,
     LogicalKeyboardKey.digit5,
     LogicalKeyboardKey.digit6,
+    LogicalKeyboardKey.digit7,
   ];
 
   @override

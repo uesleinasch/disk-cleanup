@@ -373,13 +373,10 @@ class SectionCard extends StatelessWidget {
   final Color? color;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(24),
-    decoration: BoxDecoration(
-      color: color ?? Theme.of(context).colorScheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: child,
+  Widget build(BuildContext context) => Material(
+    color: color ?? Theme.of(context).colorScheme.surfaceContainerLow,
+    borderRadius: BorderRadius.circular(12),
+    child: Padding(padding: const EdgeInsets.all(24), child: child),
   );
 }
 

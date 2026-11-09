@@ -45,7 +45,7 @@ void main() {
     );
   });
 
-  testWidgets('rail estendido a partir de 840, com os seis destinos em pt-BR', (
+  testWidgets('rail estendido a partir de 840, com os sete destinos em pt-BR', (
     t,
   ) async {
     await pumpShell(t, const Size(1000, 700));
@@ -59,6 +59,7 @@ void main() {
       'Arquivos grandes',
       'Limpeza',
       'Docker',
+      'Backup',
       'Configurações',
     ]) {
       expect(find.text(l), findsOneWidget);
@@ -80,7 +81,7 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('atalhos Ctrl+1..6 e Ctrl+, navegam', (t) async {
+  testWidgets('atalhos Ctrl+1..7 e Ctrl+, navegam', (t) async {
     final selected = <AppDestination>[];
     await pumpShell(t, const Size(1000, 700), onSelect: selected.add);
     for (final key in [
@@ -90,6 +91,7 @@ void main() {
       LogicalKeyboardKey.digit4,
       LogicalKeyboardKey.digit5,
       LogicalKeyboardKey.digit6,
+      LogicalKeyboardKey.digit7,
     ]) {
       await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
       await t.sendKeyEvent(key);
