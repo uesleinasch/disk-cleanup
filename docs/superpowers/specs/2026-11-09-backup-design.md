@@ -148,7 +148,7 @@ rsync -aH --info=progress2 --no-inc-recursive --stats [--delete] \
 
 ### 6.6 Perfis de navegadores (tarefa 6)
 
-Catálogo no código. O primeiro caminho existente vale:
+Catálogo no código. Vale o primeiro caminho que tenha o arquivo `Local State`: uma pasta sem ele é sobra de uma instalação antiga. Do `Local State` (`profile.info_cache`) saem os perfis com nome e conta, para a tela mostrar o que vai ser copiado e quais perfis não têm sincronização (sem conta, o backup é a única cópia).
 
 | id | Navegador | Caminhos do perfil (relativos ao home) |
 | --- | --- | --- |
@@ -169,7 +169,7 @@ Catálogo no código. O primeiro caminho existente vale:
   ```
 
 - Cópia: `rsync -aH --info=progress2 --exclude-from=navegadores.txt [--delete] <perfil>/ <destino>/<pasta do backup>/navegadores/<id>/`.
-- Senhas e cookies dependem do keyring do sistema, por isso `.local/share/keyrings` vem marcado nos segredos e o LEIA-ME manda restaurar o keyring antes de abrir os navegadores.
+- Senhas e cookies dependem do keyring do sistema, por isso `.local/share/keyrings` vem marcado nos segredos e o LEIA-ME manda restaurar o keyring antes de abrir os navegadores. Se o usuário marcar navegadores e desligar os segredos (ou desmarcar o keyring), a tela avisa: "Sem o keyring, os perfis voltam sem as senhas salvas."
 
 ### 6.7 Pacote de segredos (tarefa 7)
 
