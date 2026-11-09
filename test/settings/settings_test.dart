@@ -44,7 +44,7 @@ void main() {
     final full = const BackupSettings().copyWith(
       sources: ['/home/u/projetos', '/mnt/dados/docs'],
       target: const BackupTarget(
-        uuid: '1234-abcd',
+        id: '1234-abcd',
         label: 'Disco externo',
         relPath: 'copias',
       ),
@@ -104,7 +104,7 @@ void main() {
       expect(full.copyWith(secretItems: ['.ssh']), isNot(full));
       expect(
         full.copyWith(
-          target: const BackupTarget(uuid: '1234-abcd', label: 'Disco externo'),
+          target: const BackupTarget(id: '1234-abcd', label: 'Disco externo'),
         ),
         isNot(full),
       );

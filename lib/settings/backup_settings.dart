@@ -1,24 +1,31 @@
-import 'package:flutter/foundation.dart' show listEquals;
+bool _listEquals(List<String>? a, List<String>? b) {
+  if (a == null || b == null) return a == b;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
 
 class BackupTarget {
   const BackupTarget({
-    required this.uuid,
+    required this.id,
     required this.label,
     this.relPath = '',
   });
 
-  final String uuid;
+  final String id;
   final String label;
   final String relPath;
 
   Map<String, Object?> toJson() => {
-    'uuid': uuid,
+    'id': id,
     'label': label,
     'relPath': relPath,
   };
 
   factory BackupTarget.fromJson(Map<String, Object?> json) => BackupTarget(
-    uuid: json['uuid']! as String,
+    id: json['id']! as String,
     label: json['label'] as String? ?? '',
     relPath: json['relPath'] as String? ?? '',
   );
@@ -26,12 +33,12 @@ class BackupTarget {
   @override
   bool operator ==(Object other) =>
       other is BackupTarget &&
-      other.uuid == uuid &&
+      other.id == id &&
       other.label == label &&
       other.relPath == relPath;
 
   @override
-  int get hashCode => Object.hash(uuid, label, relPath);
+  int get hashCode => Object.hash(id, label, relPath);
 }
 
 class BackupSettings {
@@ -112,12 +119,12 @@ class BackupSettings {
   @override
   bool operator ==(Object other) =>
       other is BackupSettings &&
-      listEquals(other.sources, sources) &&
+      _listEquals(other.sources, sources) &&
       other.target == target &&
       other.folderName == folderName &&
-      listEquals(other.browsers, browsers) &&
+      _listEquals(other.browsers, browsers) &&
       other.secretsEnabled == secretsEnabled &&
-      listEquals(other.secretItems, secretItems) &&
+      _listEquals(other.secretItems, secretItems) &&
       other.mirror == mirror &&
       other.lastBackupAt == lastBackupAt &&
       other.reminderDays == reminderDays;

@@ -1,0 +1,122 @@
+{
+   "blockdevices": [
+      {
+         "name": "/dev/loop0",
+         "label": null,
+         "uuid": null,
+         "fstype": "squashfs",
+         "hotplug": false,
+         "size": 189648896,
+         "fsavail": "0",
+         "mountpoint": "/snap/app/92"
+      },
+      {
+         "name": "/dev/sda",
+         "label": null,
+         "uuid": null,
+         "fstype": null,
+         "hotplug": true,
+         "size": 1000204886016,
+         "fsavail": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "/dev/sda1",
+               "label": "Disco externo",
+               "uuid": "88270be3-0000-4e3d-ac16-1aa7d563da2b",
+               "fstype": "ext4",
+               "hotplug": true,
+               "size": 1000202240512,
+               "fsavail": "912790462464",
+               "mountpoint": "/media/user/Disco externo"
+            }
+         ]
+      },
+      {
+         "name": "/dev/sdb",
+         "label": null,
+         "uuid": null,
+         "fstype": null,
+         "hotplug": "1",
+         "size": "64021856256",
+         "fsavail": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "/dev/sdb1",
+               "label": "PENDRIVE",
+               "uuid": "1A2B-3C4D",
+               "fstype": "exfat",
+               "hotplug": "1",
+               "size": "64019759104",
+               "fsavail": "60000000000",
+               "mountpoint": "/media/user/PENDRIVE"
+            }
+         ]
+      },
+      {
+         "name": "/dev/nvme0n1",
+         "label": null,
+         "uuid": null,
+         "fstype": null,
+         "hotplug": false,
+         "size": 512110190592,
+         "fsavail": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "/dev/nvme0n1p1",
+               "label": null,
+               "uuid": "5E48-8B65",
+               "fstype": "vfat",
+               "hotplug": false,
+               "size": 536870912,
+               "fsavail": "452624384",
+               "mountpoint": "/boot/efi"
+            },
+            {
+               "name": "/dev/nvme0n1p2",
+               "label": null,
+               "uuid": "b8e10d2b-0000-46a6-aece-e61d36e874ec",
+               "fstype": "ext4",
+               "hotplug": false,
+               "size": 511571918848,
+               "fsavail": "56117104640",
+               "mountpoint": "/"
+            },
+            {
+               "name": "/dev/nvme0n1p3",
+               "label": null,
+               "uuid": "c0ffee00-0000-4000-8000-000000000001",
+               "fstype": "crypto_LUKS",
+               "hotplug": false,
+               "size": 200000000000,
+               "fsavail": null,
+               "mountpoint": null,
+               "children": [
+                  {
+                     "name": "/dev/mapper/dados",
+                     "label": "dados",
+                     "uuid": "d474d474-0000-4000-8000-000000000002",
+                     "fstype": "btrfs",
+                     "hotplug": false,
+                     "size": 199980000000,
+                     "fsavail": "150000000000",
+                     "mountpoint": "/mnt/dados"
+                  }
+               ]
+            },
+            {
+               "name": "/dev/nvme0n1p4",
+               "label": null,
+               "uuid": "5a5a5a5a-0000-4000-8000-000000000003",
+               "fstype": "swap",
+               "hotplug": false,
+               "size": 8000000000,
+               "fsavail": null,
+               "mountpoint": "[SWAP]"
+            }
+         ]
+      }
+   ]
+}
