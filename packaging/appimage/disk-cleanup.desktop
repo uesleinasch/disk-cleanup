@@ -2,10 +2,10 @@
 Type=Application
 Name=disk-cleanup
 GenericName=Gerenciador de espaço em disco
-Comment=Gerenciador de espaço em disco
+Comment=Mostra o que ocupa o disco, limpa com segurança e faz backup
 Exec=disk_cleanup
 Icon=disk-cleanup
 Terminal=false
-Categories=System;Utility;
+Categories=System;Filesystem;
 Keywords=disco;espaço;limpeza;cache;docker;
 StartupWMClass=disk_cleanup
