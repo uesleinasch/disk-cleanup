@@ -3,6 +3,7 @@ import 'package:disk_cleanup/core/process_runner.dart';
 class FakeProcessRunner implements ProcessRunner {
   final _responses = <String, RunResult>{};
   final _streams = <String, ({List<String> lines, RunResult result})>{};
+  final _piped = <String, (RunResult, RunResult)>{};
   final calls = <List<String>>[];
   final environments = <Map<String, String>?>[];
 
@@ -20,6 +21,37 @@ class FakeProcessRunner implements ProcessRunner {
     RunResult result = const RunResult(0, [], ''),
   }) {
     _streams[_key(exe, args)] = (lines: lines, result: result);
+  }
+
+  static String _pipeKey(Command a, Command b) =>
+      '${_key(a.executable, a.args)}\u0001${_key(b.executable, b.args)}';
+
+  void whenPiped(
+    Command producer,
+    Command consumer,
+    RunResult producerResult,
+    RunResult consumerResult,
+  ) {
+    _piped[_pipeKey(producer, consumer)] = (producerResult, consumerResult);
+  }
+
+  @override
+  Future<(RunResult, RunResult)> runPiped(
+    Command producer,
+    Command consumer, {
+    CancelToken? cancel,
+    Map<String, String>? environment,
+  }) async {
+    calls
+      ..add([producer.executable, ...producer.args])
+      ..add([consumer.executable, ...consumer.args]);
+    environments.add(environment);
+    final r = _piped[_pipeKey(producer, consumer)];
+    if (r == null) {
+      throw StateError('Comando inesperado: $producer | $consumer');
+    }
+    if (cancel?.isCancelled ?? false) throw const ScanCancelled();
+    return r;
   }
 
   @override

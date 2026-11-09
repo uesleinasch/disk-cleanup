@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:disk_cleanup/core/process_runner.dart';
@@ -125,6 +126,68 @@ void main() {
         ),
         throwsA(isA<ScanCancelled>()),
       );
+    });
+  });
+
+  group('runPiped', () {
+    test('liga a saída do primeiro à entrada do segundo', () async {
+      final (a, b) = await SystemProcessRunner().runPiped(
+        const Command('/bin/sh', [
+          '-c',
+          r'printf "um\ndois\n"; echo aviso >&2',
+        ]),
+        const Command('/bin/sh', [
+          '-c',
+          r'tr a-z A-Z; echo "$FOO" >&2; exit 3',
+        ]),
+        environment: {'FOO': 'bar'},
+      );
+      expect(a.exitCode, 0);
+      expect(a.stderr, 'aviso\n');
+      expect(b.exitCode, 3);
+      expect(utf8.decode(b.stdout), 'UM\nDOIS\n');
+      expect(b.stderr, 'bar\n');
+    });
+
+    test('consumidor que sai cedo encerra o produtor', () async {
+      final sw = Stopwatch()..start();
+      final (a, b) = await SystemProcessRunner().runPiped(
+        const Command('/bin/sh', ['-c', 'while :; do echo x; done']),
+        const Command('/bin/sh', ['-c', 'exit 2']),
+      );
+      expect(b.exitCode, 2);
+      expect(a.exitCode, isNot(0));
+      expect(sw.elapsed, lessThan(const Duration(seconds: 3)));
+    });
+
+    test('binário ausente vira 127 no lado certo', () async {
+      final (a, b) = await SystemProcessRunner().runPiped(
+        const Command('binario-que-nao-existe', []),
+        const Command('cat', []),
+      );
+      expect(a.exitCode, 127);
+      expect(b, same(notStarted));
+      final (c, d) = await SystemProcessRunner().runPiped(
+        const Command('echo', ['x']),
+        const Command('binario-que-nao-existe', []),
+      );
+      expect(c, same(notStarted));
+      expect(d.exitCode, 127);
+    });
+
+    test('cancelar encerra os dois e lança ScanCancelled', () async {
+      final token = CancelToken();
+      Future.delayed(const Duration(milliseconds: 100), token.cancel);
+      final sw = Stopwatch()..start();
+      await expectLater(
+        SystemProcessRunner().runPiped(
+          const Command('sleep', ['30']),
+          const Command('cat', []),
+          cancel: token,
+        ),
+        throwsA(isA<ScanCancelled>()),
+      );
+      expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
     });
   });
 

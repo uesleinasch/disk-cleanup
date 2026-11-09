@@ -39,7 +39,26 @@ class CancelToken {
   }
 }
 
+class Command {
+  const Command(this.executable, this.args);
+
+  final String executable;
+  final List<String> args;
+
+  @override
+  String toString() => [executable, ...args].join(' ');
+}
+
+const notStarted = RunResult(-1, [], '');
+
 abstract class ProcessRunner {
+  Future<(RunResult, RunResult)> runPiped(
+    Command producer,
+    Command consumer, {
+    CancelToken? cancel,
+    Map<String, String>? environment,
+  });
+
   Future<RunResult> run(
     String executable,
     List<String> args, {
@@ -160,6 +179,90 @@ class SystemProcessRunner implements ProcessRunner {
       if (cancelled.isCompleted) {
         unawaited(outSub.cancel());
         unawaited(errSub.cancel());
+      }
+    }
+  }
+
+  @override
+  Future<(RunResult, RunResult)> runPiped(
+    Command producer,
+    Command consumer, {
+    CancelToken? cancel,
+    Map<String, String>? environment,
+  }) async {
+    if (cancel?.isCancelled ?? false) throw const ScanCancelled();
+    final Process first;
+    try {
+      first = await Process.start(
+        producer.executable,
+        producer.args,
+        environment: environment,
+      );
+    } on ProcessException catch (e) {
+      return (RunResult(127, const [], e.message), notStarted);
+    }
+    final Process second;
+    try {
+      second = await Process.start(
+        consumer.executable,
+        consumer.args,
+        environment: environment,
+      );
+    } on ProcessException catch (e) {
+      first.kill(ProcessSignal.sigkill);
+      await first.exitCode;
+      return (notStarted, RunResult(127, const [], e.message));
+    }
+
+    final cancelled = Completer<void>();
+    void onCancel() {
+      if (!cancelled.isCompleted) cancelled.complete();
+    }
+
+    final removeListener = cancel?.onCancel(onCancel);
+    if (cancel?.isCancelled ?? false) onCancel();
+
+    unawaited(second.stdin.done.catchError((Object _) {}));
+    unawaited(first.stdout.pipe(second.stdin).catchError((Object _) {}));
+    unawaited(
+      second.exitCode.then((code) {
+        if (code != 0) first.kill(ProcessSignal.sigterm);
+      }),
+    );
+
+    final firstErr = <int>[];
+    final secondErr = <int>[];
+    final secondOut = <int>[];
+    final subs = [
+      first.stderr.listen(firstErr.addAll),
+      second.stderr.listen(secondErr.addAll),
+      second.stdout.listen(secondOut.addAll),
+    ];
+    try {
+      final exits = Future.wait([first.exitCode, second.exitCode]);
+      await Future.any<void>([exits, cancelled.future]);
+      if (cancelled.isCompleted) {
+        await Future.wait([_terminate(first), _terminate(second)]);
+        throw const ScanCancelled();
+      }
+      await Future.wait([for (final s in subs) s.asFuture<void>()])
+          .timeout(const Duration(seconds: 2), onTimeout: () => const []);
+      return (
+        RunResult(
+          await first.exitCode,
+          const [],
+          utf8.decode(firstErr, allowMalformed: true),
+        ),
+        RunResult(
+          await second.exitCode,
+          secondOut,
+          utf8.decode(secondErr, allowMalformed: true),
+        ),
+      );
+    } finally {
+      removeListener?.call();
+      for (final s in subs) {
+        unawaited(s.cancel());
       }
     }
   }

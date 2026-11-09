@@ -179,7 +179,7 @@ Catálogo no código. Vale o primeiro caminho que tenha o arquivo `Local State`:
 .ssh  .gitconfig  .gitconfig-*  .gitignore_global  .config/git  .gnupg  .local/share/keyrings
 ```
 
-`.gitconfig-*` é um glob: cobre arquivos incluídos por `includeIf` (ex.: `.gitconfig-trabalho`). Os botões "Adicionar arquivo…" e "Adicionar pasta…" incluem itens avulsos (ex.: `private_key.pem`). Avulsos precisam estar **dentro do home**, porque a restauração é `tar x` a partir do home; fora dele, o app recusa com o motivo.
+`.gitconfig-*` é um glob: cobre arquivos incluídos por `includeIf` (ex.: `.gitconfig-trabalho`). Os arquivos citados em `includeIf.*.path` e `core.excludesfile` do `git config --global` também entram, se existirem dentro do home e não estiverem cobertos por outro item. Os botões "Adicionar arquivo…" e "Adicionar pasta…" incluem itens avulsos (ex.: `private_key.pem`). Avulsos precisam estar **dentro do home**, porque a restauração é `tar x` a partir do home; fora dele, o app recusa com o motivo.
 
 **Comando:**
 
@@ -189,7 +189,8 @@ tar czf - -C <home> --exclude=.gnupg/S.* --exclude=.gnupg/*.lock <itens…>
 ```
 
 - **A senha é pedida pelo pinentry do gpg-agent** (a janela do sistema). O app não tem campo de senha e não usa `--passphrase`, `--passphrase-fd` nem `--pinentry-mode loopback`. `--no-symkey-cache` impede o agent de guardar a senha depois.
-- **O tar nunca grava em disco.** A saída do tar vai direto para a entrada do gpg, e os dois códigos de saída são conferidos. Os caminhos vão como argumentos de processo, nunca interpolados num texto de shell.
+- **O tar nunca grava em disco.** A saída do tar vai direto para a entrada do gpg (`ProcessRunner.runPiped`, ligação feita no Dart, sem shell), e os dois códigos de saída são conferidos. Os caminhos vão como argumentos de processo. `--pinentry-mode ask` garante a janela mesmo se o `gpg.conf` do usuário tiver `loopback`.
+- **Códigos:** gpg que falha com "cancel" no stderr é cancelamento (não erro); "pinentry" ou "Inappropriate ioctl" é falta de pinentry gráfico; tar com código 1 (arquivo mudou durante a leitura) é aviso; tar com código 2 ou mais é falha, porque o pacote ficaria incompleto.
 - O gpg grava em `<destino>/.secrets-AAAA-MM-DD.tar.gz.gpg.parcial`, que vira `secrets-AAAA-MM-DD.tar.gz.gpg` só no sucesso. Em falha ou cancelamento o parcial é apagado.
 - **Sem pinentry gráfico** (o agent configurado com `pinentry-curses` e o app sem terminal), o gpg falha. A etapa explica: "Não foi possível abrir a janela de senha do sistema. Instale o pacote pinentry-gnome3."
 - O texto da seção avisa: "A senha é pedida numa janela do sistema e não fica guardada no app. Sem ela, o arquivo não pode ser aberto. Guarde-a num gerenciador de senhas."
