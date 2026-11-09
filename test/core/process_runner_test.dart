@@ -1,9 +1,178 @@
+import 'dart:io';
+
 import 'package:disk_cleanup/core/process_runner.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fake_process_runner.dart';
 
 void main() {
+  group('runStreaming', () {
+    Future<(RunResult, List<String>)> stream(
+      String script, {
+      Map<String, String>? environment,
+    }) async {
+      final lines = <String>[];
+      final r = await SystemProcessRunner().runStreaming(
+        '/bin/sh',
+        ['-c', script],
+        onLine: lines.add,
+        environment: environment,
+      );
+      return (r, lines);
+    }
+
+    test(
+      'separa linhas por \\r, \\n e \\r\\n, em ordem e sem vazias',
+      () async {
+        final (r, lines) = await stream(r"printf 'a\rb\nc\r\nd\r\re'");
+        expect(r.exitCode, 0);
+        expect(lines, ['a', 'b', 'c', 'd', 'e']);
+      },
+    );
+
+    test('preserva código de saída e stderr', () async {
+      final (r, lines) = await stream('echo saida; echo erro >&2; exit 3');
+      expect(r.exitCode, 3);
+      expect(r.stderr, 'erro\n');
+      expect(lines, ['saida']);
+    });
+
+    test('repassa variáveis de ambiente', () async {
+      final (_, lines) = await stream(
+        r'echo "$LC_ALL"',
+        environment: {'LC_ALL': 'C'},
+      );
+      expect(lines, ['C']);
+    });
+
+    test('binário ausente vira exitCode 127', () async {
+      final r = await SystemProcessRunner().runStreaming(
+        'binario-que-nao-existe',
+        [],
+        onLine: (_) {},
+      );
+      expect(r.exitCode, 127);
+    });
+
+    test('entrega a linha antes do processo terminar', () async {
+      final token = CancelToken();
+      final lines = <String>[];
+      final sw = Stopwatch()..start();
+      await expectLater(
+        SystemProcessRunner().runStreaming(
+          '/bin/sh',
+          ['-c', 'echo um; sleep 5; echo dois'],
+          onLine: (l) {
+            lines.add(l);
+            token.cancel();
+          },
+          cancel: token,
+        ),
+        throwsA(isA<ScanCancelled>()),
+      );
+      expect(lines, ['um']);
+      expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
+    });
+
+    test('cancelar manda SIGTERM e espera o processo encerrar', () async {
+      final dir = await Directory.systemTemp.createTemp('runner_test');
+      addTearDown(() => dir.delete(recursive: true));
+      final marker = File('${dir.path}/encerrou');
+      final token = CancelToken();
+      Future.delayed(const Duration(milliseconds: 200), token.cancel);
+      await expectLater(
+        SystemProcessRunner().runStreaming(
+          '/bin/sh',
+          [
+            '-c',
+            r'trap "kill $!; echo ok > \"$1\"; exit 0" TERM; sleep 30 & wait',
+            'sh',
+            marker.path,
+          ],
+          onLine: (_) {},
+          cancel: token,
+        ),
+        throwsA(isA<ScanCancelled>()),
+      );
+      expect(marker.readAsStringSync(), 'ok\n');
+    });
+
+    test('processo que ignora SIGTERM leva SIGKILL após o prazo', () async {
+      final token = CancelToken();
+      Future.delayed(const Duration(milliseconds: 100), token.cancel);
+      final sw = Stopwatch()..start();
+      await expectLater(
+        SystemProcessRunner(termGrace: const Duration(milliseconds: 200))
+            .runStreaming(
+              '/bin/sh',
+              ['-c', 'trap "" TERM; sleep 3 & wait'],
+              onLine: (_) {},
+              cancel: token,
+            ),
+        throwsA(isA<ScanCancelled>()),
+      );
+      expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
+    });
+
+    test('token já cancelado não inicia o processo', () async {
+      final token = CancelToken()..cancel();
+      await expectLater(
+        SystemProcessRunner().runStreaming(
+          'sleep',
+          ['5'],
+          onLine: (_) {},
+          cancel: token,
+        ),
+        throwsA(isA<ScanCancelled>()),
+      );
+    });
+  });
+
+  test('FakeProcessRunner roteiriza linhas, ambiente e cancelamento', () async {
+    final fake = FakeProcessRunner()
+      ..whenStreaming(
+        'rsync',
+        ['-a', '/a', '/b'],
+        lines: ['10%', '50%', '100%'],
+        result: const RunResult(24, [], 'sumiu'),
+      );
+    final lines = <String>[];
+    final r = await fake.runStreaming(
+      'rsync',
+      ['-a', '/a', '/b'],
+      onLine: lines.add,
+      environment: {'LC_ALL': 'C'},
+    );
+    expect(lines, ['10%', '50%', '100%']);
+    expect(r.exitCode, 24);
+    expect(fake.calls, [
+      ['rsync', '-a', '/a', '/b'],
+    ]);
+    expect(fake.environments, [
+      {'LC_ALL': 'C'},
+    ]);
+
+    final token = CancelToken();
+    final seen = <String>[];
+    await expectLater(
+      fake.runStreaming(
+        'rsync',
+        ['-a', '/a', '/b'],
+        onLine: (l) {
+          seen.add(l);
+          token.cancel();
+        },
+        cancel: token,
+      ),
+      throwsA(isA<ScanCancelled>()),
+    );
+    expect(seen, ['10%']);
+    await expectLater(
+      fake.runStreaming('rsync', ['/x'], onLine: (_) {}),
+      throwsA(isA<StateError>()),
+    );
+  });
+
   test('SystemProcessRunner captura saída e código', () async {
     final r = await SystemProcessRunner().run('echo', ['oi']);
     expect(r.exitCode, 0);

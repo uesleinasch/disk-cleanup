@@ -45,9 +45,21 @@ abstract class ProcessRunner {
     List<String> args, {
     CancelToken? cancel,
   });
+
+  Future<RunResult> runStreaming(
+    String executable,
+    List<String> args, {
+    required void Function(String line) onLine,
+    CancelToken? cancel,
+    Map<String, String>? environment,
+  });
 }
 
 class SystemProcessRunner implements ProcessRunner {
+  SystemProcessRunner({this.termGrace = const Duration(seconds: 5)});
+
+  final Duration termGrace;
+
   @override
   Future<RunResult> run(
     String executable,
@@ -93,6 +105,72 @@ class SystemProcessRunner implements ProcessRunner {
         unawaited(outSub.cancel());
         unawaited(errSub.cancel());
       }
+    }
+  }
+
+  @override
+  Future<RunResult> runStreaming(
+    String executable,
+    List<String> args, {
+    required void Function(String line) onLine,
+    CancelToken? cancel,
+    Map<String, String>? environment,
+  }) async {
+    if (cancel?.isCancelled ?? false) throw const ScanCancelled();
+    final Process process;
+    try {
+      process = await Process.start(executable, args, environment: environment);
+    } on ProcessException catch (e) {
+      return RunResult(127, const [], e.message);
+    }
+    final cancelled = Completer<void>();
+    void onCancel() {
+      if (!cancelled.isCompleted) cancelled.complete();
+    }
+
+    final removeListener = cancel?.onCancel(onCancel);
+    if (cancel?.isCancelled ?? false) onCancel();
+
+    final err = <int>[];
+    final outSub = process.stdout
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .transform(const LineSplitter())
+        .listen((line) {
+          if (line.isNotEmpty && !cancelled.isCompleted) onLine(line);
+        });
+    final errSub = process.stderr.listen(err.addAll);
+    try {
+      final done = Future.wait<void>([
+        process.exitCode,
+        outSub.asFuture<void>(),
+        errSub.asFuture<void>(),
+      ]);
+      await Future.any<void>([done, cancelled.future]);
+      if (cancelled.isCompleted) {
+        await _terminate(process);
+        throw const ScanCancelled();
+      }
+      return RunResult(
+        await process.exitCode,
+        const [],
+        utf8.decode(err, allowMalformed: true),
+      );
+    } finally {
+      removeListener?.call();
+      if (cancelled.isCompleted) {
+        unawaited(outSub.cancel());
+        unawaited(errSub.cancel());
+      }
+    }
+  }
+
+  Future<void> _terminate(Process process) async {
+    process.kill(ProcessSignal.sigterm);
+    try {
+      await process.exitCode.timeout(termGrace);
+    } on TimeoutException {
+      process.kill(ProcessSignal.sigkill);
+      await process.exitCode;
     }
   }
 }
