@@ -114,11 +114,13 @@ node_modules .angular .stack-work dist-newstyle .venv venv .terraform .gradle
 
 **Itens de segredo e perfis de navegador dentro de uma origem são excluídos da cópia de pastas.** Se uma origem for o próprio home, `~/.ssh` não pode ir em texto puro para o disco, nem `~/.config/google-chrome` com 5 GB de cache. Eles só vão pelos caminhos próprios (6.6 e 6.7). Isso vale para todo o catálogo, marcado ou não.
 
-**Arquivos de exclusão do rsync**, num diretório temporário removido ao fim:
+**Arquivo de exclusão do rsync**: um só, com as regras separadas por NUL (`--from0`, aceita qualquer nome de pasta), num diretório temporário removido ao fim:
 
-- `comuns.txt`: uma linha `- <nome>/` por pasta sempre excluída.
-- `builds.txt`: uma linha por build ignorado, ancorada na raiz da transferência: `/<nome da origem>/<caminho relativo>/`. Caracteres curinga do rsync (`*`, `?`, `[`) no caminho são escapados com `\`.
-- `segredos.txt`: as mesmas âncoras para itens de segredo e perfis dentro de uma origem.
+- `- <nome>/` para cada pasta sempre excluída.
+- `- /<nome da origem>/<caminho relativo>/` para cada build ignorado, ancorado na raiz da transferência. Se o caminho tiver curinga do rsync (`*`, `?`, `[`), os curingas e a `\` são escapados.
+- `- /<nome da origem>/<caminho relativo>` (sem barra no fim, vale para arquivo ou pasta) para itens de segredo e perfis dentro de uma origem.
+
+O `git check-ignore` consulta o índice: uma pasta com qualquer arquivo rastreado não aparece como ignorada, mesmo que o padrão a cubra. Se o git falhar ou não existir, nenhuma pasta de build é excluída.
 
 **Estimativa:** `rsync -aHn --stats` com os mesmos argumentos da cópia real. Do `--stats` saem "Total file size" (tamanho do backup) e "Total transferred file size" (a copiar agora). A tela mostra os dois: "16,3 GB no backup · 1,2 GB a copiar agora". A estimativa roda pelo botão "Calcular" e sempre na etapa Preparando; mudar origens, destino ou "Espelhar" a invalida.
 
@@ -133,9 +135,8 @@ node_modules .angular .stack-work dist-newstyle .venv venv .terraform .gradle
 **Cópia:**
 
 ```
-rsync -aH --info=progress2 --no-inc-recursive --stats \
-  --exclude-from=comuns.txt --exclude-from=builds.txt --exclude-from=segredos.txt \
-  [--delete] <origem 1> <origem 2> … <destino>/<pasta do backup>/
+rsync -aH --info=progress2 --no-inc-recursive --stats [--delete] \
+  --from0 --exclude-from=<regras> <origem 1> <origem 2> … <destino>/<pasta do backup>/
 ```
 
 - Roda com `LC_ALL=C` para o formato dos números do progresso e do `--stats` não depender do idioma do sistema.
