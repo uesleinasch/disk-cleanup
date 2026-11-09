@@ -13,6 +13,7 @@ import 'package:disk_cleanup/scan/preselect.dart';
 import 'package:disk_cleanup/scan/scan_state.dart';
 import 'package:disk_cleanup/scan/snapshot_store.dart';
 import 'package:disk_cleanup/services.dart';
+import 'package:disk_cleanup/settings/backup_settings.dart';
 import 'package:disk_cleanup/settings/settings_controller.dart';
 import 'package:disk_cleanup/settings/settings_store.dart';
 import 'package:flutter/material.dart';
@@ -219,6 +220,55 @@ void main() {
       }
     });
   }
+
+  Future<void> setBackup(WidgetTester t, BackupSettings backup) =>
+      t.runAsync(() => settings.update((s) => s.copyWith(backup: backup)));
+
+  testWidgets('backup atrasado mostra o alerta e leva à tela Backup', (
+    t,
+  ) async {
+    await setBackup(
+      t,
+      BackupSettings(
+        sources: [services.home],
+        lastBackupAt: DateTime.now().subtract(const Duration(days: 10)),
+      ),
+    );
+    (services.runner as FakeProcessRunner).when('findmnt', [
+      '-J',
+      '-b',
+      '--list',
+      '-o',
+      'TARGET,SOURCE,FSTYPE,UUID,LABEL,AVAIL',
+      '-T',
+      services.home,
+    ], RunResult(0, '{"filesystems": []}'.codeUnits, ''));
+    await boot(t, const Size(1280, 900));
+
+    expect(find.text('Seu último backup foi há 10 dias'), findsOneWidget);
+    expect(find.text('Último backup há 10 dias'), findsOneWidget);
+
+    await t.tap(find.widgetWithText(TextButton, 'Fazer backup'));
+    await t.pump();
+    expect(find.text('Destino'), findsOneWidget);
+  });
+
+  testWidgets('backup recente mostra só a linha; sem backup nada', (t) async {
+    await setBackup(
+      t,
+      BackupSettings(
+        sources: [services.home],
+        lastBackupAt: DateTime.now().subtract(const Duration(days: 2)),
+      ),
+    );
+    await boot(t, const Size(1280, 900));
+    expect(find.textContaining('Seu último backup'), findsNothing);
+    expect(find.text('Último backup há 2 dias'), findsOneWidget);
+
+    await setBackup(t, const BackupSettings());
+    await t.pumpAndSettle();
+    expect(find.textContaining('backup', findRichText: true), findsNothing);
+  });
 
   testWidgets('Liberar com segurança abre o diálogo leve', (t) async {
     await boot(t, const Size(1280, 900));

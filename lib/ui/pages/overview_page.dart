@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../backup/backup_reminder.dart';
 import '../../core/format.dart';
 import '../../core/models.dart';
 import '../../disk/alert.dart';
@@ -40,6 +41,7 @@ class OverviewPage extends StatelessWidget {
         final volume = state.systemVolume;
         final preselected = scan.preselected;
         final safeBytes = preselected.fold(0, (a, i) => a + i.bytes);
+        final reminder = backupReminder(s.backup, now);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -58,6 +60,12 @@ class OverviewPage extends StatelessWidget {
             ),
             if (scan.running)
               ScanProgressView(progress: state.progress, onCancel: scan.cancel),
+            if (reminder == BackupReminder.due)
+              _BackupBanner(
+                lastBackupAt: s.backup.lastBackupAt,
+                now: now,
+                onBackup: () => onNavigate(AppDestination.backup),
+              ),
             if (state.alert != AlertLevel.ok && !snoozed && volume != null)
               AlertBanner(
                 level: state.alert,
@@ -104,6 +112,14 @@ class OverviewPage extends StatelessWidget {
                         ),
                       const SizedBox(height: 16),
                       _OtherVolumes(volumes: state.volumes),
+                      if (reminder != BackupReminder.hidden) ...[
+                        const SizedBox(height: 16),
+                        _BackupLine(
+                          lastBackupAt: s.backup.lastBackupAt,
+                          now: now,
+                          onOpen: () => onNavigate(AppDestination.backup),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -112,6 +128,95 @@ class OverviewPage extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _BackupBanner extends StatelessWidget {
+  const _BackupBanner({
+    required this.lastBackupAt,
+    required this.now,
+    required this.onBackup,
+  });
+
+  final DateTime? lastBackupAt;
+  final DateTime now;
+  final VoidCallback onBackup;
+
+  @override
+  Widget build(BuildContext context) {
+    final sev = Theme.of(context).extension<SeverityColors>()!;
+    final text = Theme.of(context).textTheme;
+    final fg = sev.onWarningContainer;
+    final title = lastBackupAt == null
+        ? 'Você ainda não fez nenhum backup'
+        : 'Seu último backup foi ${formatAgo(lastBackupAt!, now)}';
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        color: sev.warningContainer,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        child: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 16,
+          runSpacing: 8,
+          children: [
+            Icon(Symbols.backup_rounded, fill: 1, color: fg),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: text.titleMedium?.copyWith(color: fg)),
+                  Text(
+                    'Conecte o disco e atualize o backup das suas pastas.',
+                    style: text.bodyMedium?.copyWith(color: fg),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: fg),
+              onPressed: onBackup,
+              child: const Text('Fazer backup'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BackupLine extends StatelessWidget {
+  const _BackupLine({
+    required this.lastBackupAt,
+    required this.now,
+    required this.onOpen,
+  });
+
+  final DateTime? lastBackupAt;
+  final DateTime now;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SectionCard(
+      child: Row(
+        children: [
+          Icon(Symbols.backup_rounded, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              lastBackupAt == null
+                  ? 'Nenhum backup feito ainda'
+                  : 'Último backup ${formatAgo(lastBackupAt!, now)}',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+          ),
+          TextButton(onPressed: onOpen, child: const Text('Abrir backup')),
+        ],
+      ),
     );
   }
 }

@@ -114,6 +114,16 @@ class SettingsPage extends StatelessWidget {
                           const Divider(indent: 16, endIndent: 16),
                           _BuildRules(settings: settings),
                         ]),
+                        section('Backup', [
+                          _ReminderTile(
+                            days: s.backup.reminderDays,
+                            onChanged: (v) => settings.update(
+                              (x) => x.copyWith(
+                                backup: x.backup.copyWith(reminderDays: v),
+                              ),
+                            ),
+                          ),
+                        ]),
                         section('Aparência', [
                           Padding(
                             padding: const EdgeInsets.symmetric(
@@ -232,6 +242,48 @@ class _ThresholdTile extends StatelessWidget {
             label: '$value%',
             semanticFormatterCallback: (v) => '$label: ${v.round()}%',
             onChanged: (v) => onChanged(v.round()),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReminderTile extends StatelessWidget {
+  const _ReminderTile({required this.days, required this.onChanged});
+
+  final int days;
+  final ValueChanged<int> onChanged;
+
+  static const _max = 30;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = days == 0 ? 'Desligado' : 'A cada $days dias';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Lembrar de fazer backup na Visão geral'),
+              ),
+              Text(label, style: Theme.of(context).textTheme.labelLarge),
+            ],
+          ),
+          Slider(
+            value: days.clamp(0, _max).toDouble(),
+            max: _max.toDouble(),
+            divisions: _max,
+            label: label,
+            semanticFormatterCallback: (_) => 'Lembrete de backup: $label',
+            onChanged: (v) => onChanged(v.round()),
+          ),
+          Text(
+            'Arraste até o início para desligar.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
