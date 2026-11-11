@@ -5,6 +5,7 @@ import 'backup_planner.dart';
 import 'browser_profiles.dart';
 
 const kRestoreReadmeName = 'LEIA-ME-RESTAURAR.md';
+const kRestoreReadmeTitle = '# Restauração do backup';
 
 final _safe = RegExp(r'^[A-Za-z0-9_./=+:@,-]+$');
 
@@ -104,13 +105,13 @@ String restoreReadme(RestoreInfo info) {
   final secrets = info.secrets;
   final secretsFile = secrets == null
       ? null
-      : '"\$DESTINO"/${shellQuote(secrets.fileName)}';
+      : inBackup(secrets.fileName);
   final day =
       '${info.date.day.toString().padLeft(2, '0')}/'
       '${info.date.month.toString().padLeft(2, '0')}/${info.date.year}';
 
   out
-    ..writeln('# Restauração do backup')
+    ..writeln(kRestoreReadmeTitle)
     ..writeln()
     ..writeln(
       'Gerado pelo disk-cleanup em $day. '
@@ -141,7 +142,7 @@ String restoreReadme(RestoreInfo info) {
   }
   if (secrets != null) {
     out.writeln(
-      '| `${secrets.fileName}` | '
+      '| `${info.folderName}/${secrets.fileName}` | '
       '${secrets.items.map((i) => '`$i`').join(', ')} '
       '(criptografado com AES256; sem a senha não abre) |',
     );

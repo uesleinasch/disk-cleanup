@@ -110,6 +110,7 @@ class RestoreController extends ChangeNotifier {
   RestoreDestination destination = RestoreDestination.original;
   ConflictAction rule = ConflictAction.newerWins;
   String? secretsFile;
+  Map<String, String> _secretsPaths = const {};
 
   List<RestoreItem> items = const [];
   int? current;
@@ -146,6 +147,7 @@ class RestoreController extends ChangeNotifier {
         manifest = null;
         choices = const [];
         secretsFiles = const [];
+        _secretsPaths = const {};
         loadError = target == null
             ? 'Conecte o disco do backup ou abra uma pasta de backup.'
             : 'Não há backup em $target.';
@@ -157,7 +159,13 @@ class RestoreController extends ChangeNotifier {
         knownSources: backup.config.sources,
         home: home,
       );
-      secretsFiles = listSecretsFiles(p.dirname(resolved));
+      final parent = p.dirname(resolved);
+      _secretsPaths = {
+        for (final n in listSecretsFiles(parent)) n: p.join(parent, n),
+        for (final n in listSecretsFiles(resolved)) n: p.join(resolved, n),
+      };
+      secretsFiles = _secretsPaths.keys.toList()
+        ..sort((a, b) => b.compareTo(a));
       secretsFile = secretsFiles.firstOrNull;
       choices = _choicesFrom(manifest!, resolved);
       selected.removeWhere((id) => !choices.any((c) => c.id == id));
@@ -198,7 +206,7 @@ class RestoreController extends ChangeNotifier {
         kind: RestoreKind.secrets,
         id: 'segredos',
         label: 'Chaves e configurações',
-        backupPath: p.join(p.dirname(dir), secretsFiles.first),
+        backupPath: _secretsPaths[secretsFiles.first]!,
         originalPath: home,
       ),
     for (final s in m.sources)
@@ -276,7 +284,7 @@ class RestoreController extends ChangeNotifier {
                 kind: c.kind,
                 id: c.id,
                 label: c.label,
-                backupPath: p.join(p.dirname(backupDir!), name),
+                backupPath: _secretsPaths[name]!,
                 originalPath: c.originalPath,
               )
             : c,

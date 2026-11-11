@@ -139,9 +139,9 @@ class BackupController extends ChangeNotifier {
   String? get backupDir =>
       destination == null ? null : p.join(destination!, config.folderName);
 
-  String? get readmePath => _runDestination == null
+  String? get readmePath => _runBackupDir == null
       ? null
-      : p.join(_runDestination!, kRestoreReadmeName);
+      : p.join(_runBackupDir!, kRestoreReadmeName);
 
   String? get runBackupDir => _runBackupDir;
 
@@ -559,9 +559,10 @@ class BackupController extends ChangeNotifier {
   }
 
   Future<BackupStep> _secrets(BackupStep step, CancelToken cancel) async {
+    await Directory(_runBackupDir!).create(recursive: true);
     final r = await _b.secrets.archive(
       items: _runSecretItems,
-      destination: _runDestination!,
+      destination: _runBackupDir!,
       date: _runDate!,
       cancel: cancel,
     );
@@ -879,10 +880,13 @@ class BackupController extends ChangeNotifier {
 
   Future<BackupStep> _guide(BackupStep step) async {
     final dest = _runDestination!;
+    final dir = _runBackupDir!;
+    await Directory(dir).create(recursive: true);
+    await _moveLegacyFiles(dest, dir);
     final secretsFile =
         _secretsResult?.path ??
-        switch (listSecretsFiles(dest)) {
-          [final latest, ...] => p.join(dest, latest),
+        switch (listSecretsFiles(dir)) {
+          [final latest, ...] => p.join(dir, latest),
           _ => null,
         };
     final gitconfig = File(p.join(home, '.gitconfig'));
@@ -923,9 +927,8 @@ class BackupController extends ChangeNotifier {
           .firstOrNull
           ?.device,
     );
-    final readme = File(p.join(dest, kRestoreReadmeName));
+    final readme = File(p.join(dir, kRestoreReadmeName));
     await readme.writeAsString(restoreReadme(info));
-    await Directory(_runBackupDir!).create(recursive: true);
     await BackupManifest.write(
       _runBackupDir!,
       BackupManifest(
@@ -952,6 +955,24 @@ class BackupController extends ChangeNotifier {
       status: BackupStepStatus.done,
       message: kRestoreReadmeName,
     );
+  }
+
+  Future<void> _moveLegacyFiles(String dest, String dir) async {
+    if (p.equals(dest, dir)) return;
+    for (final name in listSecretsFiles(dest)) {
+      final target = File(p.join(dir, name));
+      if (!target.existsSync()) {
+        await File(p.join(dest, name)).rename(target.path);
+      }
+    }
+    final readme = File(p.join(dest, kRestoreReadmeName));
+    if (readme.existsSync() &&
+        (await readme.readAsString()).startsWith(kRestoreReadmeTitle)) {
+      await SafeDeleter(
+        allowedRoots: [dest],
+        protectedPaths: [dest, dir],
+      ).delete(readme.path);
+    }
   }
 
   BackupStepStatus get outcome {

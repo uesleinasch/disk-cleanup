@@ -184,16 +184,20 @@ void main() {
       isFalse,
     );
     expect(
-      File(p.join(f.hd, 'secrets-2026-11-09.tar.gz.gpg')).existsSync(),
+      File(p.join(backup, 'secrets-2026-11-09.tar.gz.gpg')).existsSync(),
       isTrue,
     );
 
-    final readme = File(p.join(f.hd, 'LEIA-ME-RESTAURAR.md'))
+    final readme = File(p.join(backup, 'LEIA-ME-RESTAURAR.md'))
         .readAsStringSync();
     expect(readme, contains('secrets-2026-11-09.tar.gz.gpg'));
     expect(readme, contains('navegadores/chrome/'));
     expect(readme, contains('udisksctl unmount -b /dev/sdz1'));
-    expect(c.readmePath, p.join(f.hd, 'LEIA-ME-RESTAURAR.md'));
+    expect(c.readmePath, p.join(backup, 'LEIA-ME-RESTAURAR.md'));
+    expect(
+      [for (final e in Directory(f.hd).listSync()) p.basename(e.path)],
+      ['backup'],
+    );
     expect(f.settings.value.backup.lastBackupAt, now);
 
     final manifest = (await BackupManifest.load(backup))!;
@@ -210,6 +214,31 @@ void main() {
     expect(c.phase, BackupPhase.idle);
   });
 
+  test('arquivos antigos da raiz do disco vão para a pasta do backup', () async {
+    await configure();
+    File(p.join(f.hd, 'secrets-2026-11-01.tar.gz.gpg')).writeAsStringSync('x');
+    File(p.join(f.hd, 'LEIA-ME-RESTAURAR.md'))
+        .writeAsStringSync('# Restauração do backup\n\nantigo\n');
+    File(p.join(f.hd, 'notas.txt')).writeAsStringSync('da pessoa');
+
+    await c.start();
+
+    expect(c.outcome, BackupStepStatus.done);
+    expect(
+      [for (final e in Directory(f.hd).listSync()) p.basename(e.path)]..sort(),
+      ['backup', 'notas.txt'],
+    );
+    final backup = p.join(f.hd, 'backup');
+    expect(
+      File(p.join(backup, 'secrets-2026-11-01.tar.gz.gpg')).existsSync(),
+      isTrue,
+    );
+    expect(
+      File(p.join(backup, 'LEIA-ME-RESTAURAR.md')).readAsStringSync(),
+      isNot(contains('antigo')),
+    );
+  });
+
   test('navegador aberto é pulado e pode tentar de novo', () async {
     await configure();
     f.openChrome();
@@ -222,7 +251,7 @@ void main() {
     expect(c.steps[i].retryable, isTrue);
     expect(c.outcome, BackupStepStatus.warnings);
     expect(
-      File(p.join(f.hd, 'LEIA-ME-RESTAURAR.md')).readAsStringSync(),
+      File(p.join(f.hd, 'backup', 'LEIA-ME-RESTAURAR.md')).readAsStringSync(),
       isNot(contains('navegadores/chrome/')),
     );
 
@@ -232,7 +261,7 @@ void main() {
     expect(c.steps[i].status, BackupStepStatus.done);
     expect(c.outcome, BackupStepStatus.done);
     expect(
-      File(p.join(f.hd, 'LEIA-ME-RESTAURAR.md')).readAsStringSync(),
+      File(p.join(f.hd, 'backup', 'LEIA-ME-RESTAURAR.md')).readAsStringSync(),
       contains('navegadores/chrome/'),
     );
   });
@@ -252,7 +281,7 @@ void main() {
     ]);
     expect(c.steps[1].retryable, isTrue);
     expect(
-      File(p.join(f.hd, 'LEIA-ME-RESTAURAR.md')).readAsStringSync(),
+      File(p.join(f.hd, 'backup', 'LEIA-ME-RESTAURAR.md')).readAsStringSync(),
       isNot(contains('gpg -d')),
     );
     expect(f.settings.value.backup.lastBackupAt, now);
@@ -292,6 +321,6 @@ void main() {
     ]);
     expect(c.outcome, BackupStepStatus.cancelled);
     expect(f.settings.value.backup.lastBackupAt, isNull);
-    expect(File(p.join(f.hd, 'LEIA-ME-RESTAURAR.md')).existsSync(), isFalse);
+    expect(File(p.join(f.hd, 'backup', 'LEIA-ME-RESTAURAR.md')).existsSync(), isFalse);
   });
 }

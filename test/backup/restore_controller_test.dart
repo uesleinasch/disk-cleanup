@@ -58,6 +58,17 @@ void main() {
     expect(r.problems, ['Escolha o que restaurar.']);
   });
 
+  test('acha segredos de backup antigo na pasta de cima', () async {
+    File(p.join(f.hd, 'backup', 'secrets-2026-11-10.tar.gz.gpg'))
+        .renameSync(p.join(f.hd, 'secrets-2026-11-01.tar.gz.gpg'));
+    await r.load();
+    expect(r.secretsFiles, ['secrets-2026-11-01.tar.gz.gpg']);
+    expect(
+      r.choice('segredos')!.backupPath,
+      p.join(f.hd, 'secrets-2026-11-01.tar.gz.gpg'),
+    );
+  });
+
   test('restaura pasta: copia o que falta e resolve o conflito', () async {
     r.toggle('pasta:projetos');
     await r.analyze();
@@ -126,7 +137,7 @@ void main() {
       await r.analyze();
       final item = r.items.single;
       expect(f.secrets.extracted, [
-        p.join(f.hd, 'secrets-2026-11-10.tar.gz.gpg'),
+        p.join(f.hd, 'backup', 'secrets-2026-11-10.tar.gz.gpg'),
       ]);
       expect(
         [for (final c in item.analysis!.conflicts) c.path],

@@ -108,7 +108,7 @@ void main() {
     expect(
       md,
       contains(
-        'cd ~ && gpg -d "\$DESTINO"/secrets-2026-11-09.tar.gz.gpg | tar xzf -\n'
+        'cd ~ && gpg -d "\$DESTINO"/backup/secrets-2026-11-09.tar.gz.gpg | tar xzf -\n'
         'chmod 700 ~/.ssh\n',
       ),
     );

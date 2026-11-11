@@ -57,9 +57,9 @@ Os dois scripts são a **implementação de referência**. Onde este documento n
 
 ```
 <destino>/
-├── LEIA-ME-RESTAURAR.md
-├── secrets-AAAA-MM-DD.tar.gz.gpg
 └── <pasta do backup>/          padrão: backup
+    ├── LEIA-ME-RESTAURAR.md
+    ├── secrets-AAAA-MM-DD.tar.gz.gpg
     ├── <origem 1>/              nome da pasta de origem
     ├── <origem 2>/
     └── navegadores/
@@ -70,7 +70,8 @@ Os dois scripts são a **implementação de referência**. Onde este documento n
 
 - A pasta do backup tem **nome fixo e é reaproveitada**: cada execução atualiza a mesma pasta, e o rsync só copia o que mudou. O nome é configurável (padrão `backup`) e não aceita `/`, vazio, `.` ou `..`.
 - Cada origem vira uma pasta com o próprio nome, como no script (`rsync origem1 origem2 destino/`, sem barra no fim das origens).
-- O pacote de segredos fica na raiz do destino, com a data no nome. Um segundo backup no mesmo dia sobrescreve o pacote do dia; dias diferentes acumulam.
+- Nada é gravado direto no destino: o pacote de segredos e o `LEIA-ME-RESTAURAR.md` ficam dentro da pasta do backup. Backups antigos que deixaram esses arquivos no destino são migrados no próximo backup, e a restauração ainda procura segredos na pasta de cima.
+- O pacote de segredos tem a data no nome. Um segundo backup no mesmo dia sobrescreve o pacote do dia; dias diferentes acumulam.
 - O `LEIA-ME-RESTAURAR.md` é reescrito a cada execução.
 
 ### 6.2 Validação antes de executar
@@ -191,7 +192,7 @@ tar czf - -C <home> --exclude=.gnupg/S.* --exclude=.gnupg/*.lock <itens…>
 - **A senha é pedida pelo pinentry do gpg-agent** (a janela do sistema). O app não tem campo de senha e não usa `--passphrase`, `--passphrase-fd` nem `--pinentry-mode loopback`. `--no-symkey-cache` impede o agent de guardar a senha depois.
 - **O tar nunca grava em disco.** A saída do tar vai direto para a entrada do gpg (`ProcessRunner.runPiped`, ligação feita no Dart, sem shell), e os dois códigos de saída são conferidos. Os caminhos vão como argumentos de processo. `--pinentry-mode ask` garante a janela mesmo se o `gpg.conf` do usuário tiver `loopback`.
 - **Códigos:** gpg que falha com "cancel" no stderr é cancelamento (não erro); "pinentry" ou "Inappropriate ioctl" é falta de pinentry gráfico; tar com código 1 (arquivo mudou durante a leitura) é aviso; tar com código 2 ou mais é falha, porque o pacote ficaria incompleto.
-- O gpg grava em `<destino>/.secrets-AAAA-MM-DD.tar.gz.gpg.parcial`, que vira `secrets-AAAA-MM-DD.tar.gz.gpg` só no sucesso. Em falha ou cancelamento o parcial é apagado.
+- O gpg grava em `<destino>/<pasta do backup>/.secrets-AAAA-MM-DD.tar.gz.gpg.parcial`, que vira `secrets-AAAA-MM-DD.tar.gz.gpg` só no sucesso. Em falha ou cancelamento o parcial é apagado.
 - **Sem pinentry gráfico** (o agent configurado com `pinentry-curses` e o app sem terminal), o gpg falha. A etapa explica: "Não foi possível abrir a janela de senha do sistema. Instale o pacote pinentry-gnome3."
 - O texto da seção avisa: "A senha é pedida numa janela do sistema e não fica guardada no app. Sem ela, o arquivo não pode ser aberto. Guarde-a num gerenciador de senhas."
 
@@ -202,7 +203,7 @@ Gerado por uma função pura a partir do relatório do backup (o que foi copiado
 1. **Conteúdo deste disco:** tabela com a pasta do backup (origens e o que não foi copiado), o pacote de segredos (itens incluídos) e a data.
 2. **Variável de partida:** `DESTINO="<caminho atual do destino>"`, com a nota de que o caminho muda em outra máquina.
 3. **Pacotes:** `sudo apt install rsync gnupg git` (o `git-lfs` só se algum `.gitconfig` incluído tiver `filter "lfs"`).
-4. **Segredos** (só se o pacote foi gerado): `cd ~ && gpg -d "$DESTINO/secrets-….tar.gz.gpg" | tar xzf -`, os `chmod` de `.ssh` e `.gnupg` e o comando para conferir o conteúdo (`gpg -d … | tar tzf -`).
+4. **Segredos** (só se o pacote foi gerado): `cd ~ && gpg -d "$DESTINO/<pasta do backup>/secrets-….tar.gz.gpg" | tar xzf -`, os `chmod` de `.ssh` e `.gnupg` e o comando para conferir o conteúdo (`gpg -d … | tar tzf -`).
 5. **Projetos:** `rsync -aH --info=progress2 "$DESTINO/<pasta>/<origem>" <pai original>/` por origem, mais a lembrança de reinstalar as dependências, citando as pastas que não foram copiadas.
 6. **Navegadores** (só os copiados): restaurar o keyring antes, fazer logout e login, abrir e fechar o navegador uma vez, fechá-lo e copiar o perfil de volta para o caminho de origem.
 7. **Antes de desconectar o disco:** `sync` e `udisksctl unmount -b <dispositivo>`, com o dispositivo vindo do `lsblk`.
