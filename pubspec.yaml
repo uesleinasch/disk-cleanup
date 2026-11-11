@@ -2,7 +2,7 @@ name: disk_cleanup
 description: "Gerenciador de espaço em disco para Linux."
 publish_to: 'none'
 
-version: 0.2.1+4
+version: 0.3.0+5
 
 environment:
   sdk: ^3.13.4
