@@ -52,6 +52,8 @@ class BackupSettings {
     this.mirror = false,
     this.lastBackupAt,
     this.reminderDays = 7,
+    this.autoSyncOnConnect = false,
+    this.autoSyncHours = 0,
   });
 
   final List<String> sources;
@@ -63,6 +65,8 @@ class BackupSettings {
   final bool mirror;
   final DateTime? lastBackupAt;
   final int reminderDays;
+  final bool autoSyncOnConnect;
+  final int autoSyncHours;
 
   BackupSettings copyWith({
     List<String>? sources,
@@ -74,6 +78,8 @@ class BackupSettings {
     bool? mirror,
     DateTime? lastBackupAt,
     int? reminderDays,
+    bool? autoSyncOnConnect,
+    int? autoSyncHours,
     bool clearTarget = false,
   }) => BackupSettings(
     sources: sources ?? this.sources,
@@ -85,6 +91,8 @@ class BackupSettings {
     mirror: mirror ?? this.mirror,
     lastBackupAt: lastBackupAt ?? this.lastBackupAt,
     reminderDays: reminderDays ?? this.reminderDays,
+    autoSyncOnConnect: autoSyncOnConnect ?? this.autoSyncOnConnect,
+    autoSyncHours: autoSyncHours ?? this.autoSyncHours,
   );
 
   Map<String, Object?> toJson() => {
@@ -97,6 +105,8 @@ class BackupSettings {
     'mirror': mirror,
     'lastBackupAt': lastBackupAt?.toIso8601String(),
     'reminderDays': reminderDays,
+    'autoSyncOnConnect': autoSyncOnConnect,
+    'autoSyncHours': autoSyncHours,
   };
 
   factory BackupSettings.fromJson(Map<String, Object?> json) {
@@ -113,6 +123,9 @@ class BackupSettings {
       mirror: json['mirror'] as bool? ?? d.mirror,
       lastBackupAt: last == null ? null : DateTime.parse(last),
       reminderDays: json['reminderDays'] as int? ?? d.reminderDays,
+      autoSyncOnConnect:
+          json['autoSyncOnConnect'] as bool? ?? d.autoSyncOnConnect,
+      autoSyncHours: json['autoSyncHours'] as int? ?? d.autoSyncHours,
     );
   }
 
@@ -127,7 +140,9 @@ class BackupSettings {
       _listEquals(other.secretItems, secretItems) &&
       other.mirror == mirror &&
       other.lastBackupAt == lastBackupAt &&
-      other.reminderDays == reminderDays;
+      other.reminderDays == reminderDays &&
+      other.autoSyncOnConnect == autoSyncOnConnect &&
+      other.autoSyncHours == autoSyncHours;
 
   @override
   int get hashCode => Object.hash(
@@ -140,5 +155,7 @@ class BackupSettings {
     mirror,
     lastBackupAt,
     reminderDays,
+    autoSyncOnConnect,
+    autoSyncHours,
   );
 }

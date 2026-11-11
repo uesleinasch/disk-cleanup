@@ -231,6 +231,12 @@ class BackupController extends ChangeNotifier {
   Future<void> setMirror(bool mirror) =>
       _update((b) => b.copyWith(mirror: mirror));
 
+  Future<void> setAutoSyncOnConnect(bool on) =>
+      _update((b) => b.copyWith(autoSyncOnConnect: on));
+
+  Future<void> setAutoSyncHours(int hours) =>
+      _update((b) => b.copyWith(autoSyncHours: hours));
+
   Future<void> toggleBrowser(String id) {
     final ids = [...selectedBrowserIds];
     ids.contains(id) ? ids.remove(id) : ids.add(id);
@@ -393,9 +399,12 @@ class BackupController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> start() async {
+  bool runIsAuto = false;
+
+  Future<void> start({bool auto = false}) async {
     if (!canRun) return;
     final chosen = selectedBrowserIds;
+    runIsAuto = auto;
     _runSecretItems = config.secretsEnabled ? selectedSecrets : const [];
     _runDate = _now();
     _runDestination = destination;
@@ -403,7 +412,7 @@ class BackupController extends ChangeNotifier {
     _secretsResult = null;
     steps = [
       const BackupStep(BackupStepKind.prepare, 'Preparando'),
-      if (_runSecretItems.isNotEmpty)
+      if (_runSecretItems.isNotEmpty && !auto)
         const BackupStep(BackupStepKind.secrets, 'Chaves e configurações'),
       const BackupStep(BackupStepKind.folders, 'Pastas'),
       for (final b in browsers)
@@ -642,7 +651,12 @@ class BackupController extends ChangeNotifier {
 
   Future<BackupStep> _guide(BackupStep step) async {
     final dest = _runDestination!;
-    final secrets = _secretsResult;
+    final secretsFile =
+        _secretsResult?.path ??
+        switch (listSecretsFiles(dest)) {
+          [final latest, ...] => p.join(dest, latest),
+          _ => null,
+        };
     final gitconfig = File(p.join(home, '.gitconfig'));
     final info = RestoreInfo(
       date: _runDate!,
@@ -652,10 +666,10 @@ class BackupController extends ChangeNotifier {
       sources: config.sources,
       ignoredBuilds: ignoredBuilds,
       backupBytes: estimate?.totalBytes,
-      secrets: secrets == null
+      secrets: secretsFile == null
           ? null
           : RestoredSecrets(
-              fileName: p.basename(secrets.path!),
+              fileName: p.basename(secretsFile),
               items: _runSecretItems,
             ),
       browsers: [
