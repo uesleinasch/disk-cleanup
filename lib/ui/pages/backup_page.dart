@@ -4,14 +4,22 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../../backup/backup_controller.dart';
 import '../../backup/disk_targets.dart';
+import '../../backup/restore_controller.dart';
 import '../../core/format.dart';
 import '../theme/severity_colors.dart';
+import '../widgets/backup_widgets.dart';
 import '../widgets/common.dart';
+import 'restore_tab.dart';
 
 class BackupPage extends StatefulWidget {
-  const BackupPage({super.key, required this.controller});
+  const BackupPage({
+    super.key,
+    required this.controller,
+    required this.restore,
+  });
 
   final BackupController controller;
+  final RestoreController restore;
 
   @override
   State<BackupPage> createState() => _BackupPageState();
@@ -34,35 +42,61 @@ class _BackupPageState extends State<BackupPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: c,
-      builder: (context, _) {
-        final running =
-            c.phase == BackupPhase.running || c.phase == BackupPhase.finished;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            PageHeader(
-              title: 'Backup',
-              subtitle: _subtitle(),
-              actions: [
-                if (c.phase == BackupPhase.idle)
-                  IconButton(
-                    tooltip: 'Procurar discos e navegadores de novo',
-                    onPressed: c.loading ? null : c.refresh,
-                    icon: const Icon(Symbols.refresh_rounded),
-                  ),
-              ],
-            ),
-            Expanded(
-              child: running
-                  ? _RunView(controller: c)
-                  : _ConfigView(controller: c),
-            ),
-            if (running) _RunBar(controller: c) else _ActionBar(controller: c),
-          ],
-        );
-      },
+    return DefaultTabController(
+      length: 2,
+      child: ListenableBuilder(
+        listenable: c,
+        builder: (context, _) {
+          final running =
+              c.phase == BackupPhase.running || c.phase == BackupPhase.finished;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              PageHeader(
+                title: 'Backup',
+                subtitle: _subtitle(),
+                actions: [
+                  if (c.phase == BackupPhase.idle)
+                    IconButton(
+                      tooltip: 'Procurar discos e navegadores de novo',
+                      onPressed: c.loading ? null : c.refresh,
+                      icon: const Icon(Symbols.refresh_rounded),
+                    ),
+                ],
+              ),
+              const TabBar(
+                tabAlignment: TabAlignment.start,
+                isScrollable: true,
+                tabs: [
+                  Tab(text: 'Fazer backup'),
+                  Tab(text: 'Restaurar'),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: running
+                              ? _RunView(controller: c)
+                              : _ConfigView(controller: c),
+                        ),
+                        if (running)
+                          _RunBar(controller: c)
+                        else
+                          _ActionBar(controller: c),
+                      ],
+                    ),
+                    RestoreTab(controller: widget.restore),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -71,33 +105,6 @@ Future<void> _report(BuildContext context, Future<String?> action) async {
   final message = await action;
   if (message == null || !context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-}
-
-class _CardTitle extends StatelessWidget {
-  const _CardTitle(this.title, this.description);
-
-  final String title;
-  final String description;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: text.titleMedium),
-          Text(
-            description,
-            style: text.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _ConfigView extends StatelessWidget {
@@ -190,7 +197,7 @@ class _DestinationCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _CardTitle(
+          const CardTitle(
             'Destino',
             'Onde o backup fica. Use um disco externo, de preferência em ext4.',
           ),
@@ -356,7 +363,7 @@ class _SourcesCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _CardTitle(
+          const CardTitle(
             'Pastas',
             'Copiadas sem dependências, caches e builds ignorados pelo git. '
                 'Cada uma vira uma pasta com o mesmo nome no backup.',
@@ -432,7 +439,7 @@ class _BrowsersCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _CardTitle(
+          const CardTitle(
             'Navegadores',
             'Perfis sem cache: favoritos, histórico, extensões e senhas salvas.',
           ),
@@ -559,30 +566,6 @@ class _SecretsCard extends StatelessWidget {
   }
 }
 
-class _BottomBar extends StatelessWidget {
-  const _BottomBar({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.surfaceContainer,
-      border: Border(
-        top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-      ),
-    ),
-    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-    child: Wrap(
-      alignment: WrapAlignment.end,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 12,
-      runSpacing: 8,
-      children: children,
-    ),
-  );
-}
-
 class _ActionBar extends StatelessWidget {
   const _ActionBar({required this.controller});
 
@@ -601,7 +584,7 @@ class _ActionBar extends StatelessWidget {
                   ? 'O tamanho é calculado no início do backup.'
                   : '${formatBytes(est.totalBytes)} no backup · '
                         '${formatBytes(est.transferBytes)} a copiar agora');
-    return _BottomBar(
+    return BottomBar(
       children: [
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
@@ -638,7 +621,7 @@ class _RunBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = controller;
-    return _BottomBar(
+    return BottomBar(
       children: [
         if (c.phase == BackupPhase.running)
           OutlinedButton(onPressed: c.cancel, child: const Text('Cancelar'))
@@ -647,12 +630,6 @@ class _RunBar extends StatelessWidget {
       ],
     );
   }
-}
-
-String _remaining(Duration d) {
-  if (d.inMinutes < 1) return 'menos de 1 min';
-  if (d.inHours < 1) return '${d.inMinutes} min';
-  return '${d.inHours} h ${d.inMinutes % 60} min';
 }
 
 class _RunView extends StatelessWidget {
@@ -673,7 +650,13 @@ class _RunView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (finished) ...[
-                _OutcomeBanner(outcome: c.outcome),
+                OutcomeBanner(
+                  outcome: c.outcome,
+                  done: 'Backup concluído.',
+                  failed: 'O backup não terminou. Veja abaixo o que falhou.',
+                  cancelled: 'Backup cancelado. O que já foi copiado continua no destino.',
+                  warnings: 'Backup concluído com avisos.',
+                ),
                 const SizedBox(height: 16),
               ],
               SectionCard(
@@ -721,67 +704,6 @@ class _RunView extends StatelessWidget {
   }
 }
 
-class _OutcomeBanner extends StatelessWidget {
-  const _OutcomeBanner({required this.outcome});
-
-  final BackupStepStatus outcome;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final sev = Theme.of(context).extension<SeverityColors>()!;
-    final (icon, bg, fg, title) = switch (outcome) {
-      BackupStepStatus.done => (
-        Symbols.check_circle_rounded,
-        sev.successContainer,
-        sev.onSuccessContainer,
-        'Backup concluído.',
-      ),
-      BackupStepStatus.failed => (
-        Symbols.error_rounded,
-        scheme.errorContainer,
-        scheme.onErrorContainer,
-        'O backup não terminou. Veja abaixo o que falhou.',
-      ),
-      BackupStepStatus.cancelled => (
-        Symbols.cancel_rounded,
-        scheme.surfaceContainerHighest,
-        scheme.onSurface,
-        'Backup cancelado. O que já foi copiado continua no destino.',
-      ),
-      _ => (
-        Symbols.warning_rounded,
-        sev.warningContainer,
-        sev.onWarningContainer,
-        'Backup concluído com avisos.',
-      ),
-    };
-    return Semantics(
-      liveRegion: true,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, fill: 1, color: fg),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: Theme.of(context).textTheme.titleMedium
-                    ?.copyWith(color: fg),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _StepRow extends StatelessWidget {
   const _StepRow({
     required this.step,
@@ -798,41 +720,8 @@ class _StepRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final sev = Theme.of(context).extension<SeverityColors>()!;
     final text = Theme.of(context).textTheme;
-    final leading = switch (step.status) {
-      BackupStepStatus.running => const SizedBox.square(
-        dimension: 20,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      ),
-      BackupStepStatus.pending => Icon(
-        Symbols.radio_button_unchecked_rounded,
-        color: scheme.outline,
-      ),
-      BackupStepStatus.done => Icon(
-        Symbols.check_circle_rounded,
-        fill: 1,
-        color: sev.success,
-      ),
-      BackupStepStatus.warnings => Icon(
-        Symbols.warning_rounded,
-        fill: 1,
-        color: sev.warning,
-      ),
-      BackupStepStatus.skipped => Icon(
-        Symbols.do_not_disturb_on_rounded,
-        color: sev.warning,
-      ),
-      BackupStepStatus.failed => Icon(
-        Symbols.error_rounded,
-        fill: 1,
-        color: scheme.error,
-      ),
-      BackupStepStatus.cancelled => Icon(
-        Symbols.cancel_rounded,
-        color: scheme.outline,
-      ),
-    };
+    final leading = StepStatusIcon(step.status);
     final progress = controller.progress;
     final copying =
         current &&
@@ -856,17 +745,7 @@ class _StepRow extends StatelessWidget {
                     'Digite a senha na janela do sistema.',
                     style: text.bodyMedium?.copyWith(color: scheme.primary),
                   ),
-                if (copying) ...[
-                  const SizedBox(height: 6),
-                  LinearProgressIndicator(value: progress.percent / 100),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${progress.percent}% · ${formatBytes(progress.bytes)} copiados · '
-                    '${formatBytes(progress.bytesPerSecond)}/s · '
-                    'faltam ${_remaining(progress.remaining)}',
-                    style: text.bodySmall?.copyWith(fontFeatures: kTabular),
-                  ),
-                ],
+                if (copying) CopyProgress(progress),
                 if (step.message != null)
                   Text(
                     step.message!,
@@ -877,7 +756,7 @@ class _StepRow extends StatelessWidget {
                     ),
                   ),
                 if (step.warnings.isNotEmpty)
-                  _Warnings(warnings: step.warnings),
+                  WarningsList(warnings: step.warnings),
                 if (onRetry != null)
                   TextButton(
                     onPressed: onRetry,
@@ -893,29 +772,6 @@ class _StepRow extends StatelessWidget {
             ),
         ],
       ),
-    );
-  }
-}
-
-class _Warnings extends StatelessWidget {
-  const _Warnings({required this.warnings});
-
-  final List<String> warnings;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return ExpansionTile(
-      tilePadding: EdgeInsets.zero,
-      childrenPadding: const EdgeInsets.only(bottom: 8),
-      expandedCrossAxisAlignment: CrossAxisAlignment.start,
-      title: Text('Ver ${warnings.length} avisos', style: text.bodyMedium),
-      children: [
-        for (final w in warnings.take(50))
-          Text(w, style: text.bodySmall?.copyWith(fontFamily: kMono)),
-        if (warnings.length > 50)
-          Text('e mais ${warnings.length - 50}', style: text.bodySmall),
-      ],
     );
   }
 }
