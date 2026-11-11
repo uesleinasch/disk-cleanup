@@ -124,10 +124,13 @@ class _ConflictRow<T> extends StatelessWidget {
   final RestoreConflict conflict;
   final ConflictReview<T> review;
 
-  String _side(int? size, DateTime? date, DateTime now) => [
-    size == null ? 'tamanho desconhecido' : formatBytes(size),
-    if (date != null) 'alterado ${formatAgo(date, now)}',
-  ].join(' · ');
+  String _side(int? size, DateTime? date, DateTime now) {
+    if (size == null && date == null) return 'não existe mais';
+    return [
+      size == null ? 'tamanho desconhecido' : formatBytes(size),
+      if (date != null) 'alterado ${formatAgo(date, now)}',
+    ].join(' · ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -135,7 +138,10 @@ class _ConflictRow<T> extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final now = review.now ?? DateTime.now();
-    final newer = c.backupIsNewer ? review.backupLabel : review.localLabel;
+    final bothExist =
+        (c.localSize != null || c.localModified != null) &&
+        (c.backupSize != null || c.backupModified != null);
+    final backupNewer = bothExist && c.backupIsNewer;
     final overridden = review.isOverridden(c);
     final secondary = text.bodySmall?.copyWith(
       color: scheme.onSurfaceVariant,
@@ -167,7 +173,7 @@ class _ConflictRow<T> extends StatelessWidget {
               Text(
                 '${review.backupLabel}: '
                 '${_side(c.backupSize, c.backupModified, now)}'
-                '${newer == review.backupLabel ? ' · mais recente' : ''}',
+                '${backupNewer ? ' · mais recente' : ''}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: secondary,

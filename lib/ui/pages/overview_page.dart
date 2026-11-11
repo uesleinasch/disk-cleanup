@@ -21,12 +21,14 @@ class OverviewPage extends StatelessWidget {
     required this.flow,
     required this.settings,
     required this.onNavigate,
+    this.backupPending = 0,
   });
 
   final ScanController scan;
   final CleanupFlow flow;
   final SettingsController settings;
   final ValueChanged<AppDestination> onNavigate;
+  final int backupPending;
 
   @override
   Widget build(BuildContext context) {
@@ -62,9 +64,24 @@ class OverviewPage extends StatelessWidget {
               ScanProgressView(progress: state.progress, onCancel: scan.cancel),
             if (reminder == BackupReminder.due)
               _BackupBanner(
-                lastBackupAt: s.backup.lastBackupAt,
-                now: now,
-                onBackup: () => onNavigate(AppDestination.backup),
+                title: s.backup.lastBackupAt == null
+                    ? 'Você ainda não fez nenhum backup'
+                    : 'Seu último backup foi '
+                          '${formatAgo(s.backup.lastBackupAt!, now)}',
+                body: 'Conecte o disco e atualize o backup das suas pastas.',
+                action: 'Fazer backup',
+                onAction: () => onNavigate(AppDestination.backup),
+              ),
+            if (backupPending > 0)
+              _BackupBanner(
+                title: backupPending == 1
+                    ? '1 arquivo do backup espera sua decisão'
+                    : '$backupPending arquivos do backup esperam sua decisão',
+                body:
+                    'Eles mudaram no disco do backup ou seriam apagados de lá. '
+                    'Nada foi perdido; o resto do backup seguiu normalmente.',
+                action: 'Ver pendentes',
+                onAction: () => onNavigate(AppDestination.backup),
               ),
             if (state.alert != AlertLevel.ok && !snoozed && volume != null)
               AlertBanner(
@@ -134,23 +151,22 @@ class OverviewPage extends StatelessWidget {
 
 class _BackupBanner extends StatelessWidget {
   const _BackupBanner({
-    required this.lastBackupAt,
-    required this.now,
-    required this.onBackup,
+    required this.title,
+    required this.body,
+    required this.action,
+    required this.onAction,
   });
 
-  final DateTime? lastBackupAt;
-  final DateTime now;
-  final VoidCallback onBackup;
+  final String title;
+  final String body;
+  final String action;
+  final VoidCallback onAction;
 
   @override
   Widget build(BuildContext context) {
     final sev = Theme.of(context).extension<SeverityColors>()!;
     final text = Theme.of(context).textTheme;
     final fg = sev.onWarningContainer;
-    final title = lastBackupAt == null
-        ? 'Você ainda não fez nenhum backup'
-        : 'Seu último backup foi ${formatAgo(lastBackupAt!, now)}';
     return Semantics(
       liveRegion: true,
       child: Container(
@@ -168,17 +184,14 @@ class _BackupBanner extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title, style: text.titleMedium?.copyWith(color: fg)),
-                  Text(
-                    'Conecte o disco e atualize o backup das suas pastas.',
-                    style: text.bodyMedium?.copyWith(color: fg),
-                  ),
+                  Text(body, style: text.bodyMedium?.copyWith(color: fg)),
                 ],
               ),
             ),
             TextButton(
               style: TextButton.styleFrom(foregroundColor: fg),
-              onPressed: onBackup,
-              child: const Text('Fazer backup'),
+              onPressed: onAction,
+              child: Text(action),
             ),
           ],
         ),

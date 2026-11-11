@@ -205,6 +205,30 @@ Future<bool> isRestorableTarget(
   return false;
 }
 
+Future<bool> sameFileContent(String a, String b) async {
+  final fa = File(a);
+  final fb = File(b);
+  if (!fa.existsSync() || !fb.existsSync()) return false;
+  if (fa.lengthSync() != fb.lengthSync()) return false;
+  final ra = await fa.open();
+  final rb = await fb.open();
+  try {
+    const chunk = 1 << 16;
+    while (true) {
+      final xa = await ra.read(chunk);
+      final xb = await rb.read(chunk);
+      if (xa.length != xb.length) return false;
+      if (xa.isEmpty) return true;
+      for (var i = 0; i < xa.length; i++) {
+        if (xa[i] != xb[i]) return false;
+      }
+    }
+  } finally {
+    await ra.close();
+    await rb.close();
+  }
+}
+
 class RestoreResult {
   const RestoreResult({
     required this.outcome,
@@ -279,7 +303,7 @@ class RestoreEngine {
           created.add(e.path);
           createdBytes += _size(from) ?? 0;
         case ItemizeKind.changed:
-          if (!e.isLink && await _sameContent(from, to)) continue;
+          if (!e.isLink && await sameFileContent(from, to)) continue;
           final local = FileStat.statSync(to);
           final backup = FileStat.statSync(from);
           conflicts.add(
@@ -307,30 +331,6 @@ class RestoreEngine {
   static int? _size(String path) {
     final s = FileStat.statSync(path);
     return s.type == FileSystemEntityType.file ? s.size : null;
-  }
-
-  static Future<bool> _sameContent(String a, String b) async {
-    final fa = File(a);
-    final fb = File(b);
-    if (!fa.existsSync() || !fb.existsSync()) return false;
-    if (fa.lengthSync() != fb.lengthSync()) return false;
-    final ra = await fa.open();
-    final rb = await fb.open();
-    try {
-      const chunk = 1 << 16;
-      while (true) {
-        final xa = await ra.read(chunk);
-        final xb = await rb.read(chunk);
-        if (xa.length != xb.length) return false;
-        if (xa.isEmpty) return true;
-        for (var i = 0; i < xa.length; i++) {
-          if (xa[i] != xb[i]) return false;
-        }
-      }
-    } finally {
-      await ra.close();
-      await rb.close();
-    }
   }
 
   Future<void> makePrivate(String dir, {CancelToken? cancel}) async {
