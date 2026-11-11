@@ -113,6 +113,7 @@ class FakeSecrets extends SecretsArchiver {
     if (waitForCancel) {
       final done = Completer<void>();
       cancel!.onCancel(done.complete);
+      if (cancel.isCancelled) done.complete();
       await done.future;
       throw const ScanCancelled();
     }
