@@ -574,6 +574,12 @@ class RestoreController extends ChangeNotifier {
 
   void cancel() => _cancel?.cancel();
 
+  Future<void> openReplaced() async {
+    final dir = replacedDir;
+    if (dir == null || !Directory(dir).existsSync()) return;
+    await services.runner.run('gio', ['open', dir]);
+  }
+
   Future<void> _discard() async {
     for (final d in [_staging, _tmp]) {
       if (d != null && d.existsSync()) await d.delete(recursive: true);

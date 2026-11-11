@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:disk_cleanup/backup/backup_controller.dart';
+import 'package:disk_cleanup/backup/restore_controller.dart';
+import 'package:disk_cleanup/backup/restore_planner.dart';
 import 'package:disk_cleanup/ui/pages/backup_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,13 +14,16 @@ import '../../support/test_app.dart';
 void main() {
   late BackupFixture f;
   late BackupController c;
+  late RestoreController r;
 
   setUp(() {
     f = BackupFixture();
     c = BackupController(f.services, f.settings);
+    r = RestoreController(f.services, f.settings, c);
   });
 
   tearDown(() {
+    r.dispose();
     c.dispose();
     f.dispose();
   });
@@ -39,7 +46,7 @@ void main() {
     t.view.physicalSize = size;
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
-    await t.pumpWidget(testApp(BackupPage(controller: c)));
+    await t.pumpWidget(testApp(BackupPage(controller: c, restore: r)));
     await settle(t);
   }
 
@@ -103,8 +110,112 @@ void main() {
       await t.tap(find.text('Concluir'));
       await t.pump();
       await settle(t);
-      expect(find.text('Fazer backup'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Fazer backup'), findsOneWidget);
       expect(find.textContaining('Último backup'), findsOneWidget);
     });
   }
+
+  Future<void> backupThenChange(WidgetTester t) async {
+    await t.runAsync(() async {
+      await c.chooseDestination(f.hd);
+      await c.addSource(p.join(f.home, 'projetos'));
+      await c.start();
+      await c.dismiss();
+      File(p.join(f.home, 'projetos/app/main.dart'))
+        ..writeAsStringSync('editado')
+        ..setLastModifiedSync(DateTime(2020));
+    });
+    await t.pumpAndSettle();
+  }
+
+  Future<void> openRestore(WidgetTester t) async {
+    await t.runAsync(r.load);
+    await t.tap(find.text('Restaurar'));
+    await t.pumpAndSettle();
+  }
+
+  Future<void> analyzeProjects(WidgetTester t) async {
+    await t.ensureVisible(find.text('projetos'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('projetos'));
+    await t.pump();
+    expect(
+      t
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Analisar'))
+          .onPressed,
+      isNotNull,
+    );
+    await t.runAsync(r.analyze);
+    await t.pumpAndSettle();
+  }
+
+  for (final size in const [Size(720, 560), Size(1920, 1080)]) {
+    testWidgets(
+      'restaurar: escolha, revisão e resultado sem overflow em $size',
+      (t) async {
+        await pump(t, size);
+        await backupThenChange(t);
+        await openRestore(t);
+
+        expect(find.text('Chaves e configurações'), findsOneWidget);
+        expect(find.text('projetos'), findsOneWidget);
+        expect(find.text('No lugar original'), findsOneWidget);
+        expect(t.takeException(), isNull);
+
+        await analyzeProjects(t);
+        expect(r.phase, RestorePhase.reviewing);
+        expect(find.textContaining('1 arquivo já existe'), findsOneWidget);
+        expect(find.text('app/main.dart'), findsOneWidget);
+        expect(find.text('Mais recente'), findsOneWidget);
+        expect(t.takeException(), isNull);
+
+        await t.tap(find.widgetWithText(FilledButton, 'Restaurar'));
+        await t.pumpAndSettle();
+        expect(find.text('Restaurar 1 arquivo?'), findsOneWidget);
+        expect(
+          find.textContaining('A versão atual fica guardada'),
+          findsOneWidget,
+        );
+        expect(t.takeException(), isNull);
+        await t.tap(find.text('Cancelar'));
+        await t.pumpAndSettle();
+        expect(r.phase, RestorePhase.reviewing);
+
+        await t.runAsync(r.start);
+        await t.pumpAndSettle();
+        expect(find.text('Restauração concluída.'), findsOneWidget);
+        expect(find.text('Abrir pasta'), findsOneWidget);
+        expect(
+          File(p.join(f.home, 'projetos/app/main.dart')).readAsStringSync(),
+          'void main() {}',
+        );
+        expect(t.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('decisão por arquivo vence a regra geral', (t) async {
+    await pump(t, const Size(1280, 900));
+    await backupThenChange(t);
+    await openRestore(t);
+    await analyzeProjects(t);
+    expect(r.totals.replace, 1);
+
+    await t.tap(find.byType(DropdownButton<ConflictAction>));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Manter os dois').last);
+    await t.pumpAndSettle();
+    expect(r.totals.duplicate, 1);
+    expect(find.byTooltip('Voltar para a regra geral'), findsOneWidget);
+
+    await t.tap(find.byTooltip('Voltar para a regra geral'));
+    await t.pump();
+    expect(r.totals.duplicate, 0);
+    expect(r.totals.replace, 1);
+
+    await t.tap(find.text('Manter o atual'));
+    await t.pump();
+    expect(r.rule, ConflictAction.keepLocal);
+    expect(r.totals.keep, 1);
+  });
 }

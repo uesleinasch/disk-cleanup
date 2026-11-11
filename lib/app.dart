@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'backup/backup_controller.dart';
+import 'backup/restore_controller.dart';
 import 'cleanup/cleanup_controller.dart';
 import 'scan/scan_controller.dart';
 import 'services.dart';
@@ -44,6 +45,11 @@ class _DiskCleanupAppState extends State<DiskCleanupApp> {
     widget.services,
     widget.settings,
   );
+  late final RestoreController _restore = RestoreController(
+    widget.services,
+    widget.settings,
+    _backup,
+  );
 
   @override
   void initState() {
@@ -60,6 +66,7 @@ class _DiskCleanupAppState extends State<DiskCleanupApp> {
   void dispose() {
     _scan.cancel();
     _scan.dispose();
+    _restore.dispose();
     _backup.dispose();
     super.dispose();
   }
@@ -78,7 +85,7 @@ class _DiskCleanupAppState extends State<DiskCleanupApp> {
     AppDestination.largeFiles => LargeFilesPage(scan: _scan, flow: _flow),
     AppDestination.cleanup => CleanupPage(scan: _scan, flow: _flow),
     AppDestination.docker => DockerPage(scan: _scan, flow: _flow),
-    AppDestination.backup => BackupPage(controller: _backup),
+    AppDestination.backup => BackupPage(controller: _backup, restore: _restore),
     AppDestination.settings => SettingsPage(settings: widget.settings),
   };
 
