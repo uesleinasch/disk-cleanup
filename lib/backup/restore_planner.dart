@@ -333,6 +333,11 @@ class RestoreEngine {
     }
   }
 
+  Future<void> makePrivate(String dir, {CancelToken? cancel}) async {
+    if (!Directory(dir).existsSync()) return;
+    await _runner.run('chmod', ['-R', 'go-rwx', '--', dir], cancel: cancel);
+  }
+
   Future<RestoreResult> execute({
     required RestoreAnalysis analysis,
     required RestoreDecision decision,

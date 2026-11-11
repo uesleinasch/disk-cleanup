@@ -123,6 +123,27 @@ class FakeSecrets extends SecretsArchiver {
       ..writeAsStringSync('cifrado');
     return SecretsResult(SecretsOutcome.ok, path: out.path, bytes: 7);
   }
+
+  final extracted = <String>[];
+  Map<String, String> packed = {'.ssh/id_ed25519': 'chave do backup'};
+
+  @override
+  Future<SecretsResult> extract({
+    required String file,
+    required String staging,
+    CancelToken? cancel,
+  }) async {
+    extracted.add(file);
+    if (outcome != SecretsOutcome.ok) {
+      return SecretsResult(outcome, message: 'janela de senha foi fechada');
+    }
+    for (final MapEntry(:key, :value) in packed.entries) {
+      File(p.join(staging, key))
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(value);
+    }
+    return SecretsResult(SecretsOutcome.ok, path: staging);
+  }
 }
 
 class BackupFixture {

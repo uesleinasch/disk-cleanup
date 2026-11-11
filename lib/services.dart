@@ -24,9 +24,13 @@ class Services {
     required this.settingsStore,
     required this.snapshots,
     required this.trashDir,
+    String? dataDir,
+    String? runtimeDir,
     DateTime Function()? now,
     BackupServices? backup,
-  }) : now = now ?? DateTime.now,
+  }) : dataDir = dataDir ?? p.join(home, '.local', 'share', 'disk-cleanup'),
+       runtimeDir = runtimeDir ?? Directory.systemTemp.path,
+       now = now ?? DateTime.now,
        backup = backup ?? BackupServices.system(home, runner),
        du = DuScanner(runner),
        disk = DiskInfoService(runner),
@@ -51,6 +55,10 @@ class Services {
       settingsStore: SettingsStore(SettingsStore.defaultPath(env, home)),
       snapshots: SnapshotStore(p.join(dataHome, 'disk-cleanup', 'snapshots')),
       trashDir: p.join(dataHome, 'Trash'),
+      dataDir: p.join(dataHome, 'disk-cleanup'),
+      runtimeDir: (env['XDG_RUNTIME_DIR'] ?? '').isNotEmpty
+          ? env['XDG_RUNTIME_DIR']
+          : null,
     );
   }
 
@@ -59,6 +67,8 @@ class Services {
   final SettingsStore settingsStore;
   final SnapshotStore snapshots;
   final String trashDir;
+  final String dataDir;
+  final String runtimeDir;
   final DateTime Function() now;
   final DuScanner du;
   final DiskInfoService disk;

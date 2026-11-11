@@ -102,6 +102,8 @@ class RsyncRunner {
 
   final ProcessRunner _runner;
 
+  ProcessRunner get runner => _runner;
+
   Future<RsyncResult> run(
     List<String> args, {
     void Function(RsyncProgress)? onProgress,

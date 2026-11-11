@@ -163,6 +163,61 @@ class SecretsArchiver {
     );
   }
 
+  Future<SecretsResult> extract({
+    required String file,
+    required String staging,
+    CancelToken? cancel,
+  }) async {
+    final gpg = Command('gpg', [
+      '--pinentry-mode',
+      'ask',
+      '--no-symkey-cache',
+      '--status-fd',
+      '2',
+      '--decrypt',
+      file,
+    ]);
+    final tar = Command('tar', ['xzf', '-', '-C', staging]);
+    final (raw, t) = await runner.runPiped(
+      gpg,
+      tar,
+      cancel: cancel,
+      environment: environment,
+    );
+    final status = raw.stderr.toLowerCase();
+    final g = RunResult(
+      raw.exitCode,
+      raw.stdout,
+      [
+        for (final l in _lines(raw.stderr))
+          if (!l.startsWith('[GNUPG:]')) l,
+      ].join('\n'),
+    );
+    if (g.exitCode != 0 && g.exitCode != 127) {
+      if (status.contains('cancel') || status.contains('83886179')) {
+        return const SecretsResult(
+          SecretsOutcome.cancelled,
+          message: 'A janela de senha foi fechada. Nada foi restaurado.',
+        );
+      }
+      if (status.contains('_bad_passphrase')) {
+        return const SecretsResult(
+          SecretsOutcome.failed,
+          message: 'Senha errada. Os segredos não foram restaurados.',
+        );
+      }
+    }
+    if (g.exitCode == 0 && t.exitCode >= 2) {
+      return SecretsResult(
+        SecretsOutcome.failed,
+        message:
+            'O pacote de segredos está danificado: '
+            '${_lines(t.stderr).lastOrNull ?? 'código ${t.exitCode}'}',
+      );
+    }
+    return _failure(t, g) ?? SecretsResult(SecretsOutcome.ok, path: staging);
+  }
+
   static SecretsResult? _failure(RunResult tar, RunResult gpg) {
     if (gpg.exitCode == 127) {
       return const SecretsResult(
