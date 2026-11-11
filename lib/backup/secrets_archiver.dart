@@ -200,7 +200,8 @@ class SecretsArchiver {
           message: 'A janela de senha foi fechada. Nada foi restaurado.',
         );
       }
-      if (status.contains('_bad_passphrase')) {
+      if (status.contains('bad_passphrase') ||
+          status.contains('decryption_failed')) {
         return const SecretsResult(
           SecretsOutcome.failed,
           message: 'Senha errada. Os segredos não foram restaurados.',
