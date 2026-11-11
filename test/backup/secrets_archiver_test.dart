@@ -313,7 +313,10 @@ void main() {
         expect(r.bytes, greaterThan(0));
         expect(
           Process.runSync('file', ['-b', r.path!]).stdout,
-          contains('GPG symmetrically encrypted data (AES256 cipher)'),
+          anyOf(
+            contains('GPG symmetrically encrypted data (AES256 cipher)'),
+            contains('PGP symmetric key encrypted data - AES with 256-bit key'),
+          ),
         );
         expect(
           Directory(path('destino')).listSync().map((e) => p.basename(e.path)),
