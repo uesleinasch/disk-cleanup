@@ -28,12 +28,16 @@ class AppShell extends StatelessWidget {
     required this.onSelect,
     required this.alert,
     required this.body,
+    this.backupRunning = false,
+    this.backupPending = 0,
   });
 
   final AppDestination current;
   final ValueChanged<AppDestination> onSelect;
   final AlertLevel alert;
   final Widget body;
+  final bool backupRunning;
+  final int backupPending;
 
   static const _digits = [
     LogicalKeyboardKey.digit1,
@@ -95,6 +99,7 @@ class AppShell extends StatelessWidget {
     required bool selected,
   }) {
     final icon = Icon(d.icon, fill: selected ? 1 : 0);
+    if (d == AppDestination.backup) return _backupIcon(context, icon);
     if (d != AppDestination.overview || alert == AlertLevel.ok) return icon;
 
     final scheme = Theme.of(context).colorScheme;
@@ -108,6 +113,23 @@ class AppShell extends StatelessWidget {
         textColor: critical ? scheme.onError : severity.onWarning,
         child: icon,
       ),
+    );
+  }
+
+  Widget _backupIcon(BuildContext context, Widget icon) {
+    if (backupPending > 0) {
+      return Semantics(
+        container: true,
+        label: 'Backup: $backupPending pendentes',
+        child: Badge.count(count: backupPending, child: icon),
+      );
+    }
+    if (!backupRunning) return icon;
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      container: true,
+      label: 'Backup em andamento',
+      child: Badge(backgroundColor: scheme.primary, child: icon),
     );
   }
 }

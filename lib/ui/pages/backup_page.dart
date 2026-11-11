@@ -2,6 +2,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../backup/auto_sync.dart';
 import '../../backup/backup_controller.dart';
 import '../../backup/disk_targets.dart';
 import '../../backup/restore_controller.dart';
@@ -16,10 +17,12 @@ class BackupPage extends StatefulWidget {
     super.key,
     required this.controller,
     required this.restore,
+    this.autoSync,
   });
 
   final BackupController controller;
   final RestoreController restore;
+  final AutoSyncScheduler? autoSync;
 
   @override
   State<BackupPage> createState() => _BackupPageState();
@@ -31,7 +34,9 @@ class _BackupPageState extends State<BackupPage> {
   @override
   void initState() {
     super.initState();
-    if (c.phase == BackupPhase.idle) c.refresh();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && c.phase == BackupPhase.idle) c.refresh();
+    });
   }
 
   String _subtitle() {
@@ -45,7 +50,7 @@ class _BackupPageState extends State<BackupPage> {
     return DefaultTabController(
       length: 2,
       child: ListenableBuilder(
-        listenable: c,
+        listenable: Listenable.merge([c, widget.autoSync]),
         builder: (context, _) {
           final running =
               c.phase == BackupPhase.running || c.phase == BackupPhase.finished;
@@ -81,7 +86,10 @@ class _BackupPageState extends State<BackupPage> {
                         Expanded(
                           child: running
                               ? _RunView(controller: c)
-                              : _ConfigView(controller: c),
+                              : _ConfigView(
+                                  controller: c,
+                                  autoSync: widget.autoSync,
+                                ),
                         ),
                         if (running)
                           _RunBar(controller: c)
@@ -108,9 +116,10 @@ Future<void> _report(BuildContext context, Future<String?> action) async {
 }
 
 class _ConfigView extends StatelessWidget {
-  const _ConfigView({required this.controller});
+  const _ConfigView({required this.controller, this.autoSync});
 
   final BackupController controller;
+  final AutoSyncScheduler? autoSync;
 
   @override
   Widget build(BuildContext context) {
@@ -136,6 +145,8 @@ class _ConfigView extends StatelessWidget {
               _BrowsersCard(controller: c),
               const SizedBox(height: 16),
               _SecretsCard(controller: c),
+              const SizedBox(height: 16),
+              _AutoSyncCard(controller: c, last: autoSync?.last),
             ],
           ),
         ),
@@ -419,6 +430,82 @@ class _SourcesCard extends StatelessWidget {
               'Desligado, o backup só acumula e nunca apaga nada.',
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+String _intervalLabel(int hours) => switch (hours) {
+  0 => 'Desligado',
+  1 => 'A cada hora',
+  24 => 'Uma vez por dia',
+  168 => 'Uma vez por semana',
+  _ => 'A cada $hours horas',
+};
+
+class _AutoSyncCard extends StatelessWidget {
+  const _AutoSyncCard({required this.controller, this.last});
+
+  final BackupController controller;
+  final AutoSyncRun? last;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = controller;
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final run = last;
+    final lastText = run == null
+        ? null
+        : run.running
+        ? 'Backup automático em andamento.'
+        : 'Último backup automático ${formatAgo(run.startedAt, DateTime.now())}: '
+              '${switch (run.outcome!) {
+                BackupStepStatus.done => 'concluído',
+                BackupStepStatus.failed => 'falhou',
+                BackupStepStatus.cancelled => 'cancelado',
+                _ => 'concluído com avisos',
+              }}.';
+    return SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const CardTitle(
+            'Backup automático',
+            'Só funciona com o app aberto. As chaves e configurações ficam '
+                'de fora, porque pedem senha; faça um backup manual para '
+                'atualizá-las.',
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: c.config.autoSyncOnConnect,
+            onChanged: c.setAutoSyncOnConnect,
+            title: const Text('Ao conectar o disco'),
+            subtitle: const Text(
+              'Faz o backup assim que o disco do backup é conectado.',
+            ),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Repetir'),
+            subtitle: const Text('Enquanto o disco estiver conectado.'),
+            trailing: DropdownButton<int>(
+              value: kAutoSyncIntervals.contains(c.config.autoSyncHours)
+                  ? c.config.autoSyncHours
+                  : 0,
+              items: [
+                for (final h in kAutoSyncIntervals)
+                  DropdownMenuItem(value: h, child: Text(_intervalLabel(h))),
+              ],
+              onChanged: (h) => h == null ? null : c.setAutoSyncHours(h),
+            ),
+          ),
+          if (lastText != null)
+            Text(
+              lastText,
+              style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
         ],
       ),
     );

@@ -55,6 +55,8 @@ void main() {
       mirror: true,
       lastBackupAt: DateTime.utc(2026, 11, 8, 22, 15),
       reminderDays: 14,
+      autoSyncOnConnect: true,
+      autoSyncHours: 6,
     );
 
     test('padrões', () {
@@ -69,6 +71,8 @@ void main() {
       expect(b.mirror, isFalse);
       expect(b.lastBackupAt, isNull);
       expect(b.reminderDays, 7);
+      expect(b.autoSyncOnConnect, isFalse);
+      expect(b.autoSyncHours, 0);
     });
 
     test('round-trip JSON preserva todos os campos', () {

@@ -186,6 +186,7 @@ void main() {
         services: services,
         settings: settings,
         scanOnStart: false,
+        autoSync: false,
       ),
     );
     for (var i = 0; i < 20 && settingsLoaded(t); i++) {
