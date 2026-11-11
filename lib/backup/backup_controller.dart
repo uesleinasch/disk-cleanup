@@ -286,6 +286,9 @@ class BackupController extends ChangeNotifier {
     if (!validBackupFolderName(config.folderName)) {
       out.add('O nome da pasta do backup não pode ser vazio nem ter "/".');
     }
+    if (busyElsewhere) {
+      out.add('Espere a restauração terminar para fazer o backup.');
+    }
     return out;
   }
 
@@ -326,7 +329,10 @@ class BackupController extends ChangeNotifier {
     return out;
   }
 
-  bool get canRun => problems.isEmpty && phase == BackupPhase.idle;
+  bool get busyElsewhere => _b.lock.heldByOther(this);
+
+  bool get canRun =>
+      problems.isEmpty && phase == BackupPhase.idle && !busyElsewhere;
 
   Future<(BackupFilter, String)> _plan(
     Directory tmp,
@@ -352,7 +358,7 @@ class BackupController extends ChangeNotifier {
       );
 
   Future<void> calculate() async {
-    if (!canRun) return;
+    if (!canRun || !_b.lock.acquire(this)) return;
     phase = BackupPhase.estimating;
     estimateError = null;
     final cancel = _cancel = CancelToken();
@@ -369,6 +375,7 @@ class BackupController extends ChangeNotifier {
     } finally {
       await tmp.delete(recursive: true);
       _cancel = null;
+      _b.lock.release(this);
       phase = BackupPhase.idle;
       notifyListeners();
     }
@@ -413,7 +420,11 @@ class BackupController extends ChangeNotifier {
   }
 
   Future<void> retry(int index) async {
-    if (phase != BackupPhase.finished || !steps[index].retryable) return;
+    if (phase != BackupPhase.finished ||
+        !steps[index].retryable ||
+        busyElsewhere) {
+      return;
+    }
     phase = BackupPhase.running;
     if (steps[index].kind == BackupStepKind.browser) {
       browsers = _b.browsers.detect();
@@ -427,6 +438,7 @@ class BackupController extends ChangeNotifier {
   }
 
   Future<void> _execute(List<int> order) async {
+    _b.lock.acquire(this);
     final cancel = _cancel = CancelToken();
     final tmp = await Directory.systemTemp.createTemp('disk-cleanup-');
     final pending = [...order];
@@ -455,6 +467,7 @@ class BackupController extends ChangeNotifier {
       }
     } finally {
       await tmp.delete(recursive: true);
+      _b.lock.release(this);
       _cancel = null;
       currentStep = null;
       progress = null;

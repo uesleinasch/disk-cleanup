@@ -347,5 +347,44 @@ void main() {
       expect(r.outcome, SecretsOutcome.cancelled, reason: r.message);
       expect(Directory(path('destino')).listSync(), isEmpty);
     });
+
+    group('extrair', () {
+      late String packed;
+      late Directory staging;
+
+      setUp(() async {
+        final r = await archiver().archive(
+          items: ['.ssh'],
+          destination: path('destino'),
+          date: DateTime(2026, 11, 9),
+        );
+        packed = r.path!;
+        staging = Directory(path('staging'))..createSync();
+      });
+
+      test('descriptografa pelo pinentry e abre na pasta temporária', () async {
+        final r = await archiver().extract(file: packed, staging: staging.path);
+        expect(r.outcome, SecretsOutcome.ok, reason: r.message);
+        expect(
+          File(p.join(staging.path, '.ssh/id_ed25519')).readAsStringSync(),
+          'chave privada',
+        );
+      });
+
+      test('senha errada falha sem abrir nada', () async {
+        File(path('pinentry/senha')).writeAsStringSync('outra senha');
+        final r = await archiver().extract(file: packed, staging: staging.path);
+        expect(r.outcome, SecretsOutcome.failed);
+        expect(r.message, contains('Senha errada'));
+        expect(staging.listSync(), isEmpty);
+      });
+
+      test('fechar a janela de senha cancela', () async {
+        File(path('pinentry/modo')).writeAsStringSync('cancelar');
+        final r = await archiver().extract(file: packed, staging: staging.path);
+        expect(r.outcome, SecretsOutcome.cancelled, reason: r.message);
+        expect(staging.listSync(), isEmpty);
+      });
+    });
   });
 }

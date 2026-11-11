@@ -1,7 +1,9 @@
 import '../core/process_runner.dart';
+import 'backup_lock.dart';
 import 'backup_planner.dart';
 import 'browser_profiles.dart';
 import 'disk_targets.dart';
+import 'restore_planner.dart';
 import 'rsync_runner.dart';
 import 'secrets_archiver.dart';
 
@@ -12,7 +14,10 @@ class BackupServices {
     required this.rsync,
     required this.browsers,
     required this.secrets,
-  });
+    BackupLock? lock,
+    RestoreEngine? restore,
+  }) : lock = lock ?? BackupLock(),
+       restore = restore ?? RestoreEngine(rsync.runner, rsync);
 
   factory BackupServices.system(String home, ProcessRunner runner) {
     final rsync = RsyncRunner(runner);
@@ -30,4 +35,6 @@ class BackupServices {
   final RsyncRunner rsync;
   final BrowserProfiles browsers;
   final SecretsArchiver secrets;
+  final BackupLock lock;
+  final RestoreEngine restore;
 }
