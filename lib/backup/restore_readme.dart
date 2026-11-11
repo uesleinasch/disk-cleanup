@@ -117,6 +117,12 @@ String restoreReadme(RestoreInfo info) {
       'Este arquivo é reescrito a cada backup.',
     )
     ..writeln()
+    ..writeln(
+      'Com o disk-cleanup instalado, o jeito mais simples é a aba '
+      '**Backup > Restaurar**: ela mostra o que já existe no computador '
+      'antes de copiar. Os passos abaixo fazem o mesmo à mão.',
+    )
+    ..writeln()
     ..writeln('| Item | O que é |')
     ..writeln('| --- | --- |');
   final names = _joinPt([for (final s in info.sources) '`${p.basename(s)}`']);
