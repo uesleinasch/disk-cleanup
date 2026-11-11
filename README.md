@@ -18,7 +18,9 @@ Página e downloads: https://uesleinasch.github.io/disk-cleanup/
   - chaves e configurações (SSH, git, GnuPG, keyring) num arquivo criptografado com AES256. A senha é pedida pela janela do sistema e não passa pelo app;
   - um `LEIA-ME-RESTAURAR.md` no disco com os comandos para restaurar tudo.
 
-  O backup só acumula: nada é apagado dele, a não ser com a opção "Espelhar". A Visão geral lembra quando o último backup ficou antigo (7 dias, configurável).
+  O backup só acumula: nada é apagado dele, a não ser com a opção "Espelhar", e mesmo assim só depois que você confirma em **Pendentes**. Arquivos que mudaram no disco do backup também esperam ali, em vez de serem sobrescritos. A Visão geral lembra quando o último backup ficou antigo (7 dias, configurável).
+- **Backup automático**, com o app aberto: ao conectar o disco e/ou a cada 1 h, 6 h, 12 h, 1 dia ou 7 dias. As chaves ficam de fora do automático, porque pedem senha.
+- **Restauração** pela aba Backup > Restaurar: tudo de uma vez ou só o que você escolher (pastas inteiras, arquivos soltos, perfis de navegador, pacote de chaves). Antes de copiar, o app lista o que já existe no computador com conteúdo diferente; você escolhe uma regra para todos (mais recente, manter o atual, usar o backup, manter os dois) e ajusta arquivo a arquivo. Nada é apagado: o que for substituído vai para `~/.local/share/disk-cleanup/substituidos/`. Também dá para restaurar numa pasta separada.
 
 ## Instalação
 

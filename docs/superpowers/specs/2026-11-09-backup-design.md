@@ -25,8 +25,8 @@ Os dois scripts são a **implementação de referência**. Onde este documento n
 
 - Backup em nuvem ou em rede como alvo principal.
 - Vários destinos ao mesmo tempo.
-- Agendamento ou backup automático. O lembrete só aparece com o app aberto.
-- Restauração pelo app (tarefa 12, someday). Nesta etapa a restauração é o `LEIA-ME-RESTAURAR.md`.
+- Agendamento ou backup automático. O lembrete só aparece com o app aberto. *(Revisto em [2026-11-10-restauracao-sync-design.md](2026-11-10-restauracao-sync-design.md): backup automático com o app aberto.)*
+- Restauração pelo app (tarefa 12, someday). Nesta etapa a restauração é o `LEIA-ME-RESTAURAR.md`. *(Feito em [2026-11-10-restauracao-sync-design.md](2026-11-10-restauracao-sync-design.md).)*
 - Firefox (pode virar tarefa futura).
 - Versões ou histórico de backups: existe uma pasta de backup, atualizada a cada execução.
 - Editar pela interface a lista de exclusões. Ela é fixa no código nesta versão.
