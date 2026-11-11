@@ -8,6 +8,7 @@ import '../core/process_runner.dart';
 import '../services.dart';
 import '../settings/settings.dart';
 import '../settings/settings_controller.dart';
+import 'backup_manifest.dart';
 import 'backup_planner.dart';
 import 'backup_services.dart';
 import 'browser_profiles.dart';
@@ -669,6 +670,28 @@ class BackupController extends ChangeNotifier {
     );
     final readme = File(p.join(dest, kRestoreReadmeName));
     await readme.writeAsString(restoreReadme(info));
+    await Directory(_runBackupDir!).create(recursive: true);
+    await BackupManifest.write(
+      _runBackupDir!,
+      BackupManifest(
+        date: _runDate,
+        hostname: Platform.localHostname,
+        home: home,
+        folderName: p.basename(_runBackupDir!),
+        sources: [
+          for (final s in config.sources)
+            ManifestSource(path: s, name: p.basename(s)),
+        ],
+        browsers: [
+          for (final b in info.browsers)
+            ManifestBrowser(
+              id: b.id,
+              label: b.label,
+              profilePath: b.profilePath,
+            ),
+        ],
+      ),
+    );
     await _b.disks.flush(dest);
     return step.copyWith(
       status: BackupStepStatus.done,

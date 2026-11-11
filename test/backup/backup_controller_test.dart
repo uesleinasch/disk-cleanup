@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:disk_cleanup/backup/backup_controller.dart';
+import 'package:disk_cleanup/backup/backup_manifest.dart';
 import 'package:disk_cleanup/backup/secrets_archiver.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -194,6 +195,16 @@ void main() {
     expect(readme, contains('udisksctl unmount -b /dev/sdz1'));
     expect(c.readmePath, p.join(f.hd, 'LEIA-ME-RESTAURAR.md'));
     expect(f.settings.value.backup.lastBackupAt, now);
+
+    final manifest = (await BackupManifest.load(backup))!;
+    expect(manifest.fromManifest, isTrue);
+    expect(manifest.date, now);
+    expect(manifest.home, f.home);
+    expect(
+      [for (final s in manifest.sources) s.path],
+      [p.join(f.home, 'projetos')],
+    );
+    expect([for (final b in manifest.browsers) b.id], ['chrome']);
 
     await c.dismiss();
     expect(c.phase, BackupPhase.idle);
