@@ -65,6 +65,7 @@ class _DiskCleanupAppState extends State<DiskCleanupApp> {
   void initState() {
     super.initState();
     _start();
+    _backup.loadPending();
     _autoSync.addListener(_onAutoSync);
     if (widget.autoSync) _autoSync.start();
   }
@@ -120,6 +121,7 @@ class _DiskCleanupAppState extends State<DiskCleanupApp> {
       flow: _flow,
       settings: widget.settings,
       onNavigate: (d) => setState(() => _current = d),
+      backupPending: _backup.pending.length,
     ),
     AppDestination.directories => DirectoriesPage(
       scan: _scan,
@@ -161,6 +163,7 @@ class _DiskCleanupAppState extends State<DiskCleanupApp> {
               onSelect: (d) => setState(() => _current = d),
               alert: _scan.state.alert,
               backupRunning: _backup.phase == BackupPhase.running,
+              backupPending: _backup.pending.length,
               body: KeyedSubtree(key: ValueKey(_current), child: _page()),
             ),
           ),

@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/format.dart';
+import '../cleanup/safe_deleter.dart';
 import '../core/process_runner.dart';
 import '../services.dart';
 import '../settings/settings.dart';
@@ -13,6 +15,8 @@ import 'backup_planner.dart';
 import 'backup_services.dart';
 import 'browser_profiles.dart';
 import 'disk_targets.dart';
+import 'pending_store.dart';
+import 'restore_planner.dart';
 import 'restore_readme.dart';
 import 'rsync_runner.dart';
 import 'secrets_archiver.dart';
@@ -70,6 +74,21 @@ class BackupStep {
 
 enum BackupPhase { idle, estimating, running, finished }
 
+enum PendingAction {
+  later,
+  sendLocal,
+  bringFromDisk,
+  keepBoth,
+  deleteFromDisk,
+  keepOnDisk,
+}
+
+String _stamp(DateTime d) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${d.year}-${two(d.month)}-${two(d.day)}-'
+      '${two(d.hour)}${two(d.minute)}${two(d.second)}';
+}
+
 bool validBackupFolderName(String name) =>
     name.trim().isNotEmpty &&
     !name.contains('/') &&
@@ -97,6 +116,9 @@ class BackupController extends ChangeNotifier {
   List<BrowserInstall> browsers = const [];
   Set<String> openBrowsers = const {};
   List<String> detectedSecrets = const [];
+  List<PendingItem> pending = const [];
+  Set<String> keepOnDisk = const {};
+  bool resolving = false;
 
   BackupPhase phase = BackupPhase.idle;
   BackupEstimate? estimate;
@@ -156,6 +178,7 @@ class BackupController extends ChangeNotifier {
       _sourceMounts = {
         for (final s in config.sources) s: await _b.disks.mountOf(s),
       };
+      await _loadPending();
     } finally {
       loading = false;
       notifyListeners();
@@ -591,13 +614,98 @@ class BackupController extends ChangeNotifier {
     return (await _plan(tmp, cancel)).$2;
   }
 
+  PendingStore get _pendingStore =>
+      PendingStore(p.join(services.dataDir, 'pendentes.json'));
+
+  Future<void> loadPending() async {
+    await _loadPending();
+    notifyListeners();
+  }
+
+  Future<void> _loadPending() async {
+    final id = config.target?.id;
+    final state = id == null
+        ? const PendingState()
+        : await _pendingStore.load(id);
+    pending = state.items;
+    keepOnDisk = state.keepOnDisk;
+  }
+
+  bool _keptOnDisk(String key) =>
+      keepOnDisk.any((k) => k == key || p.isWithin(k, key));
+
+  Future<String> _holdConflicts(
+    String rules,
+    Directory tmp,
+    CancelToken cancel,
+  ) async {
+    final dir = _runBackupDir!;
+    if (!Directory(dir).existsSync()) return rules;
+    final args = backupRsyncArgs(
+      filterFile: rules,
+      sources: config.sources,
+      destination: dir,
+      mirror: config.mirror,
+      dryRun: true,
+    );
+    final lines = <String>[];
+    final r = await _b.rsync.runner.runStreaming(
+      'rsync',
+      [
+        args.first,
+        '-8',
+        '--itemize-changes',
+        '--out-format=%i %n',
+        ...args.skip(1),
+      ],
+      onLine: lines.add,
+      environment: const {'LC_ALL': 'C'},
+      cancel: cancel,
+    );
+    if (r.exitCode != 0 && r.exitCode != 23 && r.exitCode != 24) {
+      throw BackupException(
+        interpretRsync(r, const []).error ??
+            'Não foi possível comparar com o backup.',
+      );
+    }
+    final found = await classifySyncChanges(
+      entries: parseItemize(lines),
+      sources: config.sources,
+      backupDir: dir,
+    );
+    await _loadPending();
+    pending = [
+      for (final i in found)
+        if (!(i.kind == PendingKind.wouldDelete && _keptOnDisk(i.key))) i,
+    ];
+    await _pendingStore.save(
+      config.target!.id,
+      PendingState(items: pending, keepOnDisk: keepOnDisk),
+    );
+    notifyListeners();
+    final holds = [
+      for (final i in found) i.rule,
+      for (final k in keepOnDisk) '- /${rsyncLiteral(k)}',
+    ];
+    if (holds.isEmpty) return rules;
+    final out = File(p.join(tmp.path, 'regras-sync'));
+    final base = await File(rules).readAsBytes();
+    await out.writeAsBytes([
+      ...base,
+      if (base.isNotEmpty && base.last != 0) 0,
+      ...utf8.encode(holds.join('\x00')),
+    ]);
+    return out.path;
+  }
+
   Future<BackupStep> _folders(
     BackupStep step,
     Directory tmp,
     CancelToken cancel,
   ) async {
+    final rules = await _holdConflicts(await _rules(tmp, cancel), tmp, cancel);
     final r = await _b.rsync.copy(
-      filterFile: await _rules(tmp, cancel),
+      filterFile: rules,
       sources: config.sources,
       destination: _runBackupDir!,
       mirror: config.mirror,
@@ -609,7 +717,127 @@ class BackupController extends ChangeNotifier {
         (s) => s.copyWith(backup: s.backup.copyWith(lastBackupAt: _runDate)),
       );
     }
-    return _fromRsync(step, r);
+    final result = _fromRsync(step, r);
+    if (pending.isEmpty || result.status != BackupStepStatus.done) {
+      return result;
+    }
+    return result.copyWith(
+      status: BackupStepStatus.warnings,
+      message:
+          '${pending.length} '
+          '${pending.length == 1 ? 'item espera' : 'itens esperam'} '
+          'sua decisão em Pendentes',
+    );
+  }
+
+  String? _sourceDir(String name) =>
+      config.sources.where((s) => p.basename(s) == name).firstOrNull;
+
+  Future<String?> resolvePending(Map<String, PendingAction> decisions) async {
+    final dir = backupDir;
+    final id = config.target?.id;
+    if (dir == null || id == null) {
+      return 'Conecte o disco do backup para resolver os pendentes.';
+    }
+    if (phase != BackupPhase.idle || !_b.lock.acquire(this)) {
+      return 'Espere o backup ou a restauração terminar.';
+    }
+    resolving = true;
+    notifyListeners();
+    final now = _now();
+    final tmp = await Directory.systemTemp.createTemp('disk-cleanup-');
+    final done = <String>{};
+    final errors = <String>[];
+    final kept = {...keepOnDisk};
+    try {
+      final byKey = {for (final i in pending) i.key: i};
+      final groups = <(PendingAction, String), List<PendingItem>>{};
+      for (final MapEntry(:key, :value) in decisions.entries) {
+        final item = byKey[key];
+        if (item == null || value == PendingAction.later) continue;
+        groups.putIfAbsent((value, item.source), () => []).add(item);
+      }
+      for (final MapEntry(key: (action, name), value: items)
+          in groups.entries) {
+        final local = _sourceDir(name);
+        final disk = p.join(dir, name);
+        if (local == null) {
+          errors.add('A pasta $name não está mais na lista do backup.');
+          continue;
+        }
+        final rels = [for (final i in items) i.rel];
+        switch (action) {
+          case PendingAction.later:
+            break;
+          case PendingAction.keepOnDisk:
+            kept.addAll(items.map((i) => i.key));
+            done.addAll(items.map((i) => i.key));
+          case PendingAction.deleteFromDisk:
+            final deleter = SafeDeleter(
+              allowedRoots: [dir],
+              protectedPaths: [
+                dir,
+                for (final s in config.sources) p.join(dir, p.basename(s)),
+              ],
+            );
+            for (final i in items) {
+              final outcome = await deleter.delete(p.join(disk, i.rel));
+              if (outcome == DeleteOutcome.deleted ||
+                  outcome == DeleteOutcome.missing) {
+                done.add(i.key);
+              } else {
+                errors.add('Não foi possível apagar ${i.key} do disco.');
+              }
+            }
+          case PendingAction.sendLocal ||
+              PendingAction.bringFromDisk ||
+              PendingAction.keepBoth:
+            final toDisk = action == PendingAction.sendLocal;
+            final r = await _b.restore.execute(
+              analysis: RestoreAnalysis(
+                source: toDisk ? local : disk,
+                target: toDisk ? disk : local,
+                created: const [],
+                conflicts: const [],
+              ),
+              decision: RestoreDecision(
+                copy: const [],
+                replace: action == PendingAction.keepBoth ? const [] : rels,
+                duplicate: action == PendingAction.keepBoth ? rels : const [],
+                keep: const [],
+              ),
+              replacedDir: toDisk
+                  ? p.join(dir, '.substituidos', _stamp(now), name)
+                  : p.join(services.dataDir, 'substituidos', _stamp(now), name),
+              duplicateLabel: 'do disco ${_stamp(now).substring(0, 10)}',
+              tmp: tmp,
+            );
+            if (r.outcome == RsyncOutcome.failed) {
+              errors.add(r.error ?? 'A cópia falhou.');
+            } else {
+              done.addAll(items.map((i) => i.key));
+              errors.addAll(r.warnings);
+            }
+        }
+      }
+      keepOnDisk = kept;
+      pending = [
+        for (final i in pending)
+          if (!done.contains(i.key)) i,
+      ];
+      await _pendingStore.save(
+        id,
+        PendingState(items: pending, keepOnDisk: keepOnDisk),
+      );
+    } on FileSystemException catch (e) {
+      errors.add('${e.message}: ${e.path}');
+    } finally {
+      await tmp.delete(recursive: true);
+      _b.lock.release(this);
+      resolving = false;
+      notifyListeners();
+    }
+    return errors.isEmpty ? null : errors.take(3).join('\n');
   }
 
   Future<BackupStep> _browser(

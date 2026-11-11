@@ -218,4 +218,64 @@ void main() {
     expect(r.rule, ConflictAction.keepLocal);
     expect(r.totals.keep, 1);
   });
+
+  Future<void> makePending(WidgetTester t) async {
+    await t.runAsync(() async {
+      await c.chooseDestination(f.hd);
+      await c.addSource(p.join(f.home, 'projetos'));
+      await c.setMirror(true);
+      await c.start();
+      await c.dismiss();
+      final hd = p.join(f.hd, 'backup', 'projetos', 'app', 'main.dart');
+      File(hd)
+        ..writeAsStringSync('editado no disco')
+        ..setLastModifiedSync(DateTime.now().add(const Duration(hours: 1)));
+      File(p.join(f.home, 'projetos/app/node_modules/dep/index.js'))
+          .deleteSync();
+      f.file('projetos/app/apagar-depois.txt');
+      await c.start();
+      await c.dismiss();
+      File(p.join(f.home, 'projetos/app/apagar-depois.txt')).deleteSync();
+      await c.start();
+      await c.dismiss();
+    });
+    await t.pumpAndSettle();
+  }
+
+  for (final size in const [Size(720, 560), Size(1920, 1080)]) {
+    testWidgets('pendentes: seções, decisão em lote e confirmação em $size', (
+      t,
+    ) async {
+      await pump(t, size);
+      await makePending(t);
+      expect(c.pending.length, 2);
+      expect(find.text('Pendentes (2)'), findsOneWidget);
+
+      await t.tap(find.text('Pendentes (2)'));
+      await t.pumpAndSettle();
+      expect(find.text('Mais novos no disco (1)'), findsOneWidget);
+      expect(find.text('projetos/app/main.dart'), findsOneWidget);
+      expect(t.takeException(), isNull);
+
+      final apply = find.widgetWithText(FilledButton, 'Aplicar');
+      expect(t.widget<FilledButton>(apply).onPressed, isNull);
+
+      await t.tap(find.text('Trazer o do disco').first);
+      await t.pumpAndSettle();
+      expect(find.text('Aplicar 1 decisão'), findsOneWidget);
+
+      await t.ensureVisible(find.text('Seriam apagados do disco (1)'));
+      await t.pumpAndSettle();
+      expect(find.text('projetos/app/apagar-depois.txt'), findsOneWidget);
+      expect(find.textContaining('não existe mais'), findsOneWidget);
+
+      await t.tap(find.text('Aplicar 1 decisão'));
+      await t.pumpAndSettle();
+      expect(find.text('Aplicar 1 decisão?'), findsOneWidget);
+      expect(t.takeException(), isNull);
+      await t.tap(find.text('Cancelar'));
+      await t.pumpAndSettle();
+      expect(c.pending.length, 2);
+    });
+  }
 }

@@ -10,6 +10,7 @@ import '../../core/format.dart';
 import '../theme/severity_colors.dart';
 import '../widgets/backup_widgets.dart';
 import '../widgets/common.dart';
+import 'pending_tab.dart';
 import 'restore_tab.dart';
 
 class BackupPage extends StatefulWidget {
@@ -48,7 +49,7 @@ class _BackupPageState extends State<BackupPage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: ListenableBuilder(
         listenable: Listenable.merge([c, widget.autoSync]),
         builder: (context, _) {
@@ -69,12 +70,17 @@ class _BackupPageState extends State<BackupPage> {
                     ),
                 ],
               ),
-              const TabBar(
+              TabBar(
                 tabAlignment: TabAlignment.start,
                 isScrollable: true,
                 tabs: [
-                  Tab(text: 'Fazer backup'),
-                  Tab(text: 'Restaurar'),
+                  const Tab(text: 'Fazer backup'),
+                  const Tab(text: 'Restaurar'),
+                  Tab(
+                    text: c.pending.isEmpty
+                        ? 'Pendentes'
+                        : 'Pendentes (${c.pending.length})',
+                  ),
                 ],
               ),
               Expanded(
@@ -98,6 +104,7 @@ class _BackupPageState extends State<BackupPage> {
                       ],
                     ),
                     RestoreTab(controller: widget.restore),
+                    PendingTab(controller: c),
                   ],
                 ),
               ),
@@ -426,8 +433,9 @@ class _SourcesCard extends StatelessWidget {
             onChanged: c.setMirror,
             title: const Text('Espelhar'),
             subtitle: const Text(
-              'Remove do backup o que você apagou nas pastas de origem. '
-              'Desligado, o backup só acumula e nunca apaga nada.',
+              'Remove do backup o que você apagou nas pastas de origem, '
+              'depois que você confirmar em Pendentes. Desligado, o backup '
+              'só acumula e nunca apaga nada.',
             ),
           ),
         ],
