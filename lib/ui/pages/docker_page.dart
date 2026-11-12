@@ -20,7 +20,7 @@ class DockerPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: scan,
+      listenable: Listenable.merge([scan, flow]),
       builder: (context, _) {
         final docker = scan.state.docker;
         final items = [
@@ -53,15 +53,22 @@ class DockerPage extends StatelessWidget {
                 selected.isNotEmpty)
               CleanupSummaryBar(
                 count: selected.length,
-                bytes: selected.fold(0, (a, i) => a + i.bytes),
+                size: totalSizeLabel(selected),
                 risk: highestRisk(selected),
-                labelOverride:
-                    'Remover ${formatBytes(selected.fold(0, (a, i) => a + i.bytes))}',
-                onClean: () async {
-                  await flow.run(context, selected);
-                  final fresh = await scan.services.docker.inventory();
-                  scan.replaceDocker(fresh);
-                },
+                labelOverride: withSize('Remover', totalSizeLabel(selected)),
+                onClean: flow.canClean
+                    ? () async {
+                        final result = await flow.run(context, selected);
+                        if (result == null || result.cancelled) return;
+                        try {
+                          scan.replaceDocker(
+                            await scan.services.docker.inventory(),
+                          );
+                        } on Object catch (e) {
+                          debugPrint('Falha ao reler o Docker: $e');
+                        }
+                      }
+                    : null,
               ),
           ],
         );

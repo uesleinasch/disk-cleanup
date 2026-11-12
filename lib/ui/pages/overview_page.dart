@@ -11,6 +11,7 @@ import '../../settings/settings_controller.dart';
 import '../cleanup_flow.dart';
 import '../shell/app_shell.dart';
 import '../theme/severity_colors.dart';
+import '../widgets/cleanup_widgets.dart';
 import '../widgets/common.dart';
 import '../widgets/disk_usage_bar.dart';
 
@@ -33,7 +34,7 @@ class OverviewPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([scan, settings]),
+      listenable: Listenable.merge([scan, settings, flow]),
       builder: (context, _) {
         final state = scan.state;
         final s = settings.value;
@@ -41,8 +42,13 @@ class OverviewPage extends StatelessWidget {
         final snoozed =
             s.bannerSnoozedUntil != null && s.bannerSnoozedUntil!.isAfter(now);
         final volume = state.systemVolume;
-        final preselected = scan.preselected;
-        final safeBytes = preselected.fold(0, (a, i) => a + i.bytes);
+        final preselected = [
+          for (final i in scan.preselected)
+            if (scan.isSelected(i.id)) i,
+        ];
+        final safeSize = totalSizeLabel(preselected);
+        final canClean = flow.canClean && preselected.isNotEmpty;
+        void free() => flow.run(context, preselected);
         final reminder = backupReminder(s.backup, now);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -87,14 +93,14 @@ class OverviewPage extends StatelessWidget {
               AlertBanner(
                 level: state.alert,
                 volume: volume,
-                safeBytes: safeBytes,
+                safeSize: safeSize,
                 warnPercent: s.warnPercent,
                 onSnooze: () => settings.update(
                   (v) => v.copyWith(
                     bannerSnoozedUntil: now.add(const Duration(days: 1)),
                   ),
                 ),
-                onShowWhatToFree: () => flow.run(context, preselected),
+                onShowWhatToFree: canClean ? free : null,
               ),
             Expanded(
               child: SingleChildScrollView(
@@ -111,11 +117,13 @@ class OverviewPage extends StatelessWidget {
                                 alert: state.alert,
                                 recoverable: state.recoverableBytes,
                               ),
-                        right: preselected.isEmpty
+                        right: state.updatedAt == null
+                            ? _NotScanned(scanning: scan.running)
+                            : scan.preselected.isEmpty
                             ? const _NothingToFree()
                             : _SafeCard(
                                 items: preselected,
-                                onFree: () => flow.run(context, preselected),
+                                onFree: canClean ? free : null,
                               ),
                       ),
                       const SizedBox(height: 16),
@@ -382,7 +390,7 @@ class _SafeCard extends StatelessWidget {
   const _SafeCard({required this.items, required this.onFree});
 
   final List<CleanupItem> items;
-  final VoidCallback onFree;
+  final VoidCallback? onFree;
 
   static const _groups = {
     CleanupCategory.cache: 'Caches de pacotes e navegadores',
@@ -394,10 +402,10 @@ class _SafeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final total = items.fold(0, (a, i) => a + i.bytes);
-    final byGroup = <CleanupCategory, int>{};
+    final total = totalSizeLabel(items);
+    final byGroup = <CleanupCategory, List<CleanupItem>>{};
     for (final i in items) {
-      byGroup[i.category] = (byGroup[i.category] ?? 0) + i.bytes;
+      (byGroup[i.category] ??= []).add(i);
     }
     final fg = scheme.onPrimaryContainer;
     return SectionCard(
@@ -421,7 +429,7 @@ class _SafeCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              formatBytes(total),
+              total ?? 'Tamanho desconhecido',
               style: text.headlineLarge?.copyWith(
                 color: fg,
                 fontFeatures: kTabular,
@@ -435,7 +443,7 @@ class _SafeCard extends StatelessWidget {
                   children: [
                     Expanded(child: Text(_groups[e.key] ?? e.key.name)),
                     Text(
-                      formatBytes(e.value),
+                      totalSizeLabel(e.value) ?? 'Desconhecido',
                       style: const TextStyle(
                         fontWeight: FontWeight.w500,
                         fontFeatures: kTabular,
@@ -446,17 +454,54 @@ class _SafeCard extends StatelessWidget {
               ),
             const SizedBox(height: 12),
             Text(
-              'Tudo é recriado automaticamente quando necessário.',
+              items.isEmpty
+                  ? 'Você desmarcou todos os itens na Limpeza.'
+                  : 'Tudo é recriado automaticamente quando necessário.',
               style: text.bodySmall?.copyWith(color: fg),
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: onFree,
               icon: const Icon(Symbols.mop_rounded),
-              label: Text('Liberar ${formatBytes(total)} com segurança'),
+              label: Text('${withSize('Liberar', total)} com segurança'),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _NotScanned extends StatelessWidget {
+  const _NotScanned({required this.scanning});
+
+  final bool scanning;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Symbols.search_rounded,
+            size: 32,
+            color: scheme.onSurfaceVariant,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            scanning ? 'Varrendo o disco…' : 'Ainda não varrido',
+            style: text.titleMedium,
+          ),
+          Text(
+            scanning
+                ? 'O que dá para liberar aparece quando a varredura terminar.'
+                : 'Atualize a varredura para ver o que dá para liberar.',
+            style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
       ),
     );
   }

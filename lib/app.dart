@@ -106,6 +106,7 @@ class _DiskCleanupAppState extends State<DiskCleanupApp> {
   @override
   void dispose() {
     _scan.cancel();
+    _flow.dispose();
     _scan.dispose();
     _autoSync
       ..removeListener(_onAutoSync)
