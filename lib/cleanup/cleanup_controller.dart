@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../core/models.dart';
+import '../scan/project_activity.dart';
 import '../services.dart';
 import '../settings/settings.dart';
 import 'privileged_runner.dart';
@@ -34,6 +35,17 @@ RiskLevel highestRisk(List<CleanupItem> items) => items.fold(
   (worst, i) => i.risk.index > worst.index ? i.risk : worst,
 );
 
+class UndoResult {
+  const UndoResult({required this.restored, required this.failed});
+
+  final int restored;
+  final int failed;
+}
+
+class _Missing implements Exception {
+  const _Missing();
+}
+
 bool batchNeedsRoot(List<CleanupItem> items) =>
     items.any((i) => i.requiresRoot);
 
@@ -58,19 +70,31 @@ class CleanupController {
     final done = <CleanupItem>[];
     var failed = 0;
 
-    final rootItems = [
-      for (final i in pending)
-        if (i.action is RootAction) i,
-    ];
-    if (rootItems.isNotEmpty) {
-      final commands = <RootCommand>[];
-      final owner = <int>[];
-      for (var k = 0; k < rootItems.length; k++) {
-        for (final c in (rootItems[k].action as RootAction).commands) {
-          commands.add(c);
-          owner.add(k);
-        }
+    final rootItems = <CleanupItem>[];
+    final commands = <RootCommand>[];
+    final owner = <int>[];
+    final handledAsRoot = <CleanupItem>{};
+    for (final item in pending.where(_runsAsRoot)) {
+      handledAsRoot.add(item);
+      final List<RootCommand> itemCommands;
+      try {
+        itemCommands = switch (item.action) {
+          RootAction(:final commands) => commands,
+          DockerAction(:final op, :final ids) => [DockerCli(op, ids)],
+          _ => const [],
+        };
+      } on ArgumentError {
+        failed++;
+        continue;
       }
+      final k = rootItems.length;
+      rootItems.add(item);
+      for (final c in itemCommands) {
+        commands.add(c);
+        owner.add(k);
+      }
+    }
+    if (rootItems.isNotEmpty) {
       final batch = await services.root.run(commands);
       if (batch.cancelled) {
         return CleanupResult(cancelled: true, skipped: skipped);
@@ -87,38 +111,17 @@ class CleanupController {
     final deleter = services.deleter(settings);
     final undo = <TrashedEntry>[];
     for (final item in pending) {
-      switch (item.action) {
-        case RootAction():
-          break;
-        case DockerAction(:final op, :final ids):
-          (await services.docker.execute(op, ids)) ? done.add(item) : failed++;
-        case EmptyTrashAction():
-          await services.trash.empty();
+      if (handledAsRoot.contains(item)) continue;
+      try {
+        if (await _runItem(item, deleter, undo)) {
           done.add(item);
-        case TrashPathsAction(:final paths):
-          var ok = true;
-          for (final path in paths) {
-            try {
-              final entry = await services.trash.moveToTrash(path);
-              if (entry != null) undo.add(entry);
-            } on FileSystemException {
-              ok = false;
-            }
-          }
-          ok ? done.add(item) : failed++;
-        case DeletePathsAction(:final paths):
-          final outcomes = [
-            for (final path in paths) await deleter.delete(path),
-          ];
-          if (outcomes.every((o) => o == DeleteOutcome.missing)) {
-            skipped++;
-          } else if (outcomes.any(
-            (o) => o == DeleteOutcome.refused || o == DeleteOutcome.failed,
-          )) {
-            failed++;
-          } else {
-            done.add(item);
-          }
+        } else {
+          failed++;
+        }
+      } on _Missing {
+        skipped++;
+      } on Object {
+        failed++;
       }
     }
 
@@ -132,10 +135,60 @@ class CleanupController {
     );
   }
 
-  Future<void> undo(List<TrashedEntry> entries) async {
-    for (final e in entries) {
-      await services.trash.restore(e);
+  static bool _runsAsRoot(CleanupItem item) =>
+      item.action is RootAction ||
+      (item.action is DockerAction && item.requiresRoot);
+
+  Future<bool> _runItem(
+    CleanupItem item,
+    SafeDeleter deleter,
+    List<TrashedEntry> undo,
+  ) async {
+    switch (item.action) {
+      case RootAction():
+        return false;
+      case DockerAction(:final op, :final ids):
+        return services.docker.execute(op, ids);
+      case EmptyTrashAction():
+        return await services.trash.empty() == 0;
+      case TrashPathsAction(:final paths):
+        var ok = true;
+        for (final path in paths) {
+          if (!await deleter.canRemove(path)) {
+            ok = false;
+            continue;
+          }
+          try {
+            final entry = await services.trash.moveToTrash(path);
+            if (entry != null) undo.add(entry);
+          } on FileSystemException {
+            ok = false;
+          }
+        }
+        return ok;
+      case DeletePathsAction(:final paths):
+        final outcomes = [for (final path in paths) await deleter.delete(path)];
+        if (outcomes.every((o) => o == DeleteOutcome.missing)) {
+          throw const _Missing();
+        }
+        return !outcomes.any(
+          (o) => o == DeleteOutcome.refused || o == DeleteOutcome.failed,
+        );
     }
+  }
+
+  Future<UndoResult> undo(List<TrashedEntry> entries) async {
+    var restored = 0;
+    var failed = 0;
+    for (final e in entries) {
+      try {
+        await services.trash.restore(e);
+        restored++;
+      } on Object {
+        failed++;
+      }
+    }
+    return UndoResult(restored: restored, failed: failed);
   }
 
   bool _stillValid(CleanupItem item, Settings s, DateTime now) {
@@ -163,18 +216,8 @@ class CleanupController {
   }
 }
 
-DateTime? projectModifiedNow(String artifactPath, List<BuildRule> rules) {
-  final projectDir = Directory(p.dirname(artifactPath));
-  final names = rules.map((r) => r.dirName).toSet();
-  DateTime? newest;
-  try {
-    for (final e in projectDir.listSync(followLinks: false)) {
-      if (names.contains(p.basename(e.path))) continue;
-      final m = e.statSync().modified;
-      if (newest == null || m.isAfter(newest)) newest = m;
-    }
-  } on FileSystemException {
-    return null;
-  }
-  return newest;
-}
+DateTime? projectModifiedNow(String artifactPath, List<BuildRule> rules) =>
+    newestProjectModification(
+      p.dirname(artifactPath),
+      extraPruned: rules.map((r) => r.dirName),
+    );

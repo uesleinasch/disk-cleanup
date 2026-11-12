@@ -136,7 +136,7 @@ class DockerInventory {
       bytes: bytes,
       risk: risk,
       requiresRoot: needsRoot,
-      preselected: risk == RiskLevel.safe,
+      preselected: risk == RiskLevel.safe && !needsRoot,
       action: DockerAction(op, ids),
     );
 
@@ -189,18 +189,15 @@ class DockerService {
 
   final ProcessRunner _runner;
   final PrivilegedRunner _root;
-  bool _needsRoot = false;
 
   Future<DockerInventory> inventory() async {
     final result = await _runner.run('docker', _dfArgs);
     if (result.exitCode == 0) {
-      _needsRoot = false;
       return _parse(result.stdoutText);
     }
     final err = result.stderr.toLowerCase();
     if (result.exitCode == 127) return const DockerInventory.unavailable();
     if (err.contains('permission denied')) {
-      _needsRoot = true;
       return const DockerInventory.needsRootOnly();
     }
     return const DockerInventory.unavailable();
@@ -208,7 +205,6 @@ class DockerService {
 
   Future<DockerInventory> inventoryAsRoot() async {
     final batch = await _root.run([DockerCli(DockerOp.inventory, [])]);
-    _needsRoot = true;
     if (batch.cancelled || batch.exitCodes[0] != 0) {
       return const DockerInventory.needsRootOnly();
     }
@@ -219,8 +215,12 @@ class DockerService {
     return _parse(json).withNeedsRoot(true);
   }
 
-  Future<bool> execute(DockerOp op, List<String> ids) async {
-    if (_needsRoot) {
+  Future<bool> execute(
+    DockerOp op,
+    List<String> ids, {
+    bool asRoot = false,
+  }) async {
+    if (asRoot) {
       final batch = await _root.run([DockerCli(op, ids)]);
       return !batch.cancelled && batch.exitCodes[0] == 0;
     }

@@ -27,27 +27,32 @@ class LargeFileFinder {
     CancelToken? cancel,
   }) async {
     if (roots.isEmpty) return [];
-    final result = await _runner.run('find', [
-      ...roots,
-      '-xdev',
-      if (excludeRoots.isNotEmpty) ...[
-        '(',
-        for (var i = 0; i < excludeRoots.length; i++) ...[
-          if (i > 0) '-o',
-          '-path',
-          findPathLiteral(excludeRoots[i]),
+    final result = await _runner.run(
+      'find',
+      [
+        ...roots,
+        '-xdev',
+        if (excludeRoots.isNotEmpty) ...[
+          '(',
+          for (var i = 0; i < excludeRoots.length; i++) ...[
+            if (i > 0) '-o',
+            '-path',
+            findPathLiteral(excludeRoots[i]),
+          ],
+          ')',
+          '-prune',
+          '-o',
         ],
-        ')',
-        '-prune',
-        '-o',
+        '-type',
+        'f',
+        '-size',
+        '+${minBytes - 1}c',
+        '-printf',
+        r'%s\t%A@\t%T@\t%p\0',
       ],
-      '-type',
-      'f',
-      '-size',
-      '+${minBytes - 1}c',
-      '-printf',
-      r'%s\t%A@\t%T@\t%p\0',
-    ], cancel: cancel);
+      cancel: cancel,
+      environment: cLocaleEnvironment,
+    );
 
     final byPath = <String, LargeFile>{};
     for (final record in result.stdoutText.split('\x00')) {

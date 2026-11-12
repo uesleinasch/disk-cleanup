@@ -174,35 +174,68 @@ class Settings {
 
   factory Settings.fromJson(Map<String, Object?> json, String home) {
     final defaults = Settings.defaults(home);
-    final snoozed = json['bannerSnoozedUntil'] as String?;
-    final window = json['window'] as Map<String, Object?>?;
-    final rules = json['buildRules'] as List<Object?>?;
-    final dirs = json['mappedDirs'] as List<Object?>?;
-    final backup = json['backup'] as Map<String, Object?>?;
+    T field<T>(String key, T fallback, T? Function(Object? raw) parse) {
+      try {
+        return parse(json[key]) ?? fallback;
+      } catch (_) {
+        return fallback;
+      }
+    }
+
+    int? asInt(Object? v) => v is int ? v : null;
     return Settings(
-      mappedDirs: dirs == null ? defaults.mappedDirs : dirs.cast<String>(),
-      warnPercent: json['warnPercent'] as int? ?? defaults.warnPercent,
-      warnBytes: json['warnBytes'] as int? ?? defaults.warnBytes,
-      critPercent: json['critPercent'] as int? ?? defaults.critPercent,
-      critBytes: json['critBytes'] as int? ?? defaults.critBytes,
-      protectActiveProjects:
-          json['protectActiveProjects'] as bool? ??
-          defaults.protectActiveProjects,
-      activeProjectDays:
-          json['activeProjectDays'] as int? ?? defaults.activeProjectDays,
-      buildRules: rules == null
-          ? defaults.buildRules
-          : [
-              for (final r in rules)
-                BuildRule.fromJson((r! as Map).cast<String, Object?>()),
-            ],
-      themeMode:
-          ThemeMode.values.asNameMap()[json['themeMode']] ?? defaults.themeMode,
-      bannerSnoozedUntil: snoozed == null ? null : DateTime.parse(snoozed),
-      window: window == null ? null : WindowBounds.fromJson(window),
-      backup: backup == null
-          ? defaults.backup
-          : BackupSettings.fromJson(backup),
+      mappedDirs: field(
+        'mappedDirs',
+        defaults.mappedDirs,
+        (v) => v is List ? v.whereType<String>().toList() : null,
+      ),
+      warnPercent: field('warnPercent', defaults.warnPercent, asInt),
+      warnBytes: field('warnBytes', defaults.warnBytes, asInt),
+      critPercent: field('critPercent', defaults.critPercent, asInt),
+      critBytes: field('critBytes', defaults.critBytes, asInt),
+      protectActiveProjects: field(
+        'protectActiveProjects',
+        defaults.protectActiveProjects,
+        (v) => v is bool ? v : null,
+      ),
+      activeProjectDays: field(
+        'activeProjectDays',
+        defaults.activeProjectDays,
+        asInt,
+      ),
+      buildRules: field(
+        'buildRules',
+        defaults.buildRules,
+        (v) => v is List
+            ? [
+                for (final r in v)
+                  BuildRule.fromJson((r! as Map).cast<String, Object?>()),
+              ]
+            : null,
+      ),
+      themeMode: field(
+        'themeMode',
+        defaults.themeMode,
+        (v) => ThemeMode.values.asNameMap()[v],
+      ),
+      bannerSnoozedUntil: field<DateTime?>(
+        'bannerSnoozedUntil',
+        null,
+        (v) => v is String ? DateTime.parse(v) : null,
+      ),
+      window: field<WindowBounds?>(
+        'window',
+        null,
+        (v) =>
+            v is Map ? WindowBounds.fromJson(v.cast<String, Object?>()) : null,
+      ),
+      backup: field(
+        'backup',
+        defaults.backup,
+        (v) => v is Map
+            ? BackupSettings.fromJson(v.cast<String, Object?>())
+            : null,
+      ),
     );
   }
 

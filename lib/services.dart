@@ -8,6 +8,7 @@ import 'cleanup/privileged_runner.dart';
 import 'cleanup/safe_deleter.dart';
 import 'cleanup/trash_service.dart';
 import 'core/process_runner.dart';
+import 'core/system_paths.dart';
 import 'disk/disk_info.dart';
 import 'scan/build_finder.dart';
 import 'scan/cache_catalog.dart';
@@ -81,8 +82,12 @@ class Services {
   late final DockerService docker;
   final BackupServices backup;
 
+  List<String> safeMappedDirs(Settings s) =>
+      allowedMappedDirs(s.mappedDirs, home: home);
+
   SafeDeleter deleter(Settings s) => SafeDeleter(
-    allowedRoots: [home, ...s.mappedDirs],
+    home: home,
+    allowedRoots: [home, ...safeMappedDirs(s)],
     protectedPaths: [
       home,
       ...s.mappedDirs,

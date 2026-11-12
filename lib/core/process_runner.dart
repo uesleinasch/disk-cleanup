@@ -51,6 +51,8 @@ class Command {
 
 const notStarted = RunResult(-1, [], '');
 
+const cLocaleEnvironment = {'LC_ALL': 'C'};
+
 abstract class ProcessRunner {
   Future<(RunResult, RunResult)> runPiped(
     Command producer,
@@ -63,6 +65,7 @@ abstract class ProcessRunner {
     String executable,
     List<String> args, {
     CancelToken? cancel,
+    Map<String, String>? environment,
   });
 
   Future<RunResult> runStreaming(
@@ -84,11 +87,12 @@ class SystemProcessRunner implements ProcessRunner {
     String executable,
     List<String> args, {
     CancelToken? cancel,
+    Map<String, String>? environment,
   }) async {
     if (cancel?.isCancelled ?? false) throw const ScanCancelled();
     final Process process;
     try {
-      process = await Process.start(executable, args);
+      process = await Process.start(executable, args, environment: environment);
     } on ProcessException catch (e) {
       return RunResult(127, const [], e.message);
     }

@@ -215,6 +215,12 @@ void main() {
       expect(items, hasLength(1));
       expect(items.single.requiresRoot, isTrue);
     });
+
+    test('item que exige root nunca vem pré-selecionado', () {
+      final items = inv.withNeedsRoot(true).toItems();
+      expect(items, isNotEmpty);
+      expect(items.where((i) => i.preselected), isEmpty);
+    });
   });
 
   group('execute', () {
@@ -238,10 +244,10 @@ void main() {
       ]);
       fake.when('pkexec', ['/bin/sh', '-c', script], _ok('__dc_status 0 0\n'));
       final s = _service(fake);
-      fake.when('docker', _dfArgs, _ok('x', code: 1, err: 'permission denied'));
-      await s.inventory();
       expect(
-        await s.execute(DockerOp.removeContainers, ['abcdef123456']),
+        await s.execute(DockerOp.removeContainers, [
+          'abcdef123456',
+        ], asRoot: true),
         isTrue,
       );
       expect(fake.calls.last.first, 'pkexec');

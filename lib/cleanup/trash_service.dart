@@ -25,7 +25,7 @@ class TrashListing {
   final String name;
   final String originalPath;
   final DateTime deletedAt;
-  final int bytes;
+  final int? bytes;
 }
 
 class TrashService {
@@ -116,22 +116,33 @@ class TrashService {
           name: i.name,
           originalPath: i.path,
           deletedAt: i.date,
-          bytes: sizes[p.join(_filesDir, i.name)] ?? 0,
+          bytes: sizes[p.join(_filesDir, i.name)],
         ),
     ];
   }
 
-  Future<void> empty() async {
+  Future<int> empty() async {
+    var failed = 0;
     for (final dir in [_filesDir, _infoDir]) {
       final d = Directory(dir);
-      if (!await d.exists()) {
-        await d.create(recursive: true);
-        continue;
-      }
-      await for (final entity in d.list(followLinks: false)) {
-        await _deleteEntity(entity.path);
+      try {
+        if (!await d.exists()) {
+          await d.create(recursive: true);
+          continue;
+        }
+        final entries = await d.list(followLinks: false).toList();
+        for (final entity in entries) {
+          try {
+            await _deleteEntity(entity.path);
+          } on FileSystemException {
+            failed++;
+          }
+        }
+      } on FileSystemException {
+        failed++;
       }
     }
+    return failed;
   }
 
   Future<void> deleteFromTrash(List<String> names) async {

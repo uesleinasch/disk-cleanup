@@ -82,7 +82,7 @@ List<Consumer> composeConsumers({
           ),
         );
       }
-    } else {
+    } else if (!entry.value.totalUnknown && !entry.value.permissionDenied) {
       add(
         Consumer(
           label: p.basename(dir),
@@ -172,4 +172,5 @@ CleanupItem withPreselected(CleanupItem i, bool value) => CleanupItem(
   preselected: value,
   lastModified: i.lastModified,
   action: i.action,
+  sizeUnknown: i.sizeUnknown,
 );

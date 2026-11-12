@@ -97,6 +97,7 @@ class CleanupItem {
     required this.preselected,
     this.lastModified,
     required this.action,
+    this.sizeUnknown = false,
   });
 
   final String id;
@@ -110,6 +111,7 @@ class CleanupItem {
   final bool preselected;
   final DateTime? lastModified;
   final CleanupAction action;
+  final bool sizeUnknown;
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -123,6 +125,7 @@ class CleanupItem {
     'preselected': preselected,
     'lastModified': lastModified?.toIso8601String(),
     'action': action.toJson(),
+    'sizeUnknown': sizeUnknown,
   };
 
   factory CleanupItem.fromJson(Map<String, Object?> json) {
@@ -141,6 +144,7 @@ class CleanupItem {
       action: CleanupAction.fromJson(
         Map<String, Object?>.from(json['action'] as Map),
       ),
+      sizeUnknown: json['sizeUnknown'] as bool? ?? false,
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 
 import '../cleanup/docker_service.dart';
 import '../cleanup/privileged_runner.dart';
+import '../core/format.dart';
 import '../core/models.dart';
 import '../core/process_runner.dart';
 import '../services.dart';
@@ -20,6 +21,16 @@ int? parseRootDuBytes(String stdout) {
   if (tab <= 0) return null;
   return int.tryParse(record.substring(0, tab).trim());
 }
+
+Map<String, int?> mappedWeeklyDeltas(
+  Map<String, DuResult> mapped,
+  Snapshot? weekAgo,
+) => {
+  for (final e in mapped.entries)
+    e.key: e.value.totalUnknown || e.value.permissionDenied
+        ? null
+        : weeklyDelta(e.value.total, _totalIn(weekAgo, e.key)),
+};
 
 class ScanController extends ChangeNotifier {
   ScanController(this.services);
@@ -70,23 +81,30 @@ class ScanController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void replaceDocker(DockerInventory inventory) {
+  void replaceDocker(DockerInventory inventory, {Settings? settings}) {
+    final s = settings ?? Settings.defaults(services.home);
+    final now = services.now();
+    final dockerItems = [
+      for (final i in inventory.toItems())
+        withPreselected(i, i.preselected && shouldPreselect(i, s, now)),
+    ];
+    _selected.removeWhere((id) => id.startsWith('docker:'));
     _state = _state.copyWith(
       docker: inventory,
       items: [
         for (final i in _state.items)
           if (i.category != CleanupCategory.docker) i,
-        ...inventory.toItems(),
+        ...dockerItems,
       ],
     );
-    _selected.addAll(
-      inventory.toItems().where((i) => i.preselected).map((i) => i.id),
-    );
+    _selected.addAll(dockerItems.where((i) => i.preselected).map((i) => i.id));
     notifyListeners();
   }
 
   Future<void> readDockerAsRoot() async {
-    replaceDocker(await services.docker.inventoryAsRoot());
+    final inventory = await services.docker.inventoryAsRoot();
+    final settings = await services.settingsStore.load(services.home);
+    replaceDocker(inventory, settings: settings);
   }
 
   final Set<String> measuring = {};
@@ -150,13 +168,15 @@ class ScanController extends ChangeNotifier {
   void cancel() => _cancel?.cancel();
 
   Future<void> scan() async {
-    if (running) return;
+    if (running || _cancel != null) return;
     final cancel = CancelToken();
     _cancel = cancel;
     final previous = _state;
-    final settings = await services.settingsStore.load(services.home);
-    final mapped = settings.mappedDirs;
-    final steps = mapped.length + 7;
+    _state = _state.copyWith(
+      progress: const ScanProgressInfo(currentDir: 'Disco', running: true),
+    );
+    notifyListeners();
+    var steps = 7;
     var done = 0;
     void step(String label) {
       _state = _state.copyWith(
@@ -171,6 +191,9 @@ class ScanController extends ChangeNotifier {
     }
 
     try {
+      final settings = await services.settingsStore.load(services.home);
+      final mapped = settings.mappedDirs;
+      steps = mapped.length + 7;
       step('Disco');
       final volumes = await services.disk.volumes();
 
@@ -231,10 +254,7 @@ class ScanController extends ChangeNotifier {
       final weekAgo = await services.snapshots.closestTo(
         now.subtract(const Duration(days: 7)),
       );
-      final deltas = <String, int?>{
-        for (final e in mappedResults.entries)
-          e.key: weeklyDelta(e.value.total, _totalIn(weekAgo, e.key)),
-      };
+      final deltas = mappedWeeklyDeltas(mappedResults, weekAgo);
 
       _state = ScanState(
         updatedAt: now,
@@ -296,14 +316,20 @@ class ScanController extends ChangeNotifier {
   Future<List<CleanupItem>> _trashItems() async {
     final listing = await services.trash.list();
     if (listing.isEmpty) return [];
-    final total = listing.fold(0, (a, e) => a + e.bytes);
+    final total = listing.fold(0, (a, e) => a + (e.bytes ?? 0));
+    final unknown = listing.where((e) => e.bytes == null).length;
+    final allUnknown = unknown == listing.length;
     return [
       CleanupItem(
         id: 'trash:all',
         category: CleanupCategory.trash,
         title: 'Esvaziar a lixeira',
-        note: '${listing.length} itens',
+        note: unknown == 0 || allUnknown
+            ? '${listing.length} itens'
+            : '${listing.length} itens, pelo menos ${formatBytes(total)} '
+                  '($unknown sem tamanho conhecido)',
         bytes: total,
+        sizeUnknown: allUnknown,
         risk: RiskLevel.danger,
         requiresRoot: false,
         preselected: false,
@@ -316,7 +342,8 @@ class ScanController extends ChangeNotifier {
           title: e.name,
           path: e.originalPath,
           note: 'Sairá da lixeira para sempre',
-          bytes: e.bytes,
+          bytes: e.bytes ?? 0,
+          sizeUnknown: e.bytes == null,
           risk: RiskLevel.danger,
           requiresRoot: false,
           preselected: false,
@@ -328,12 +355,16 @@ class ScanController extends ChangeNotifier {
         ),
     ];
   }
+}
 
-  static int? _totalIn(Snapshot? s, String dir) {
-    final dirs = s?.state['mappedDirs'];
-    if (dirs is! Map) return null;
-    final entry = dirs[dir];
-    if (entry is! Map) return null;
-    return entry['total'] as int?;
+int? _totalIn(Snapshot? s, String dir) {
+  final dirs = s?.state['mappedDirs'];
+  if (dirs is! Map) return null;
+  final entry = dirs[dir];
+  if (entry is! Map ||
+      entry['totalUnknown'] == true ||
+      entry['permissionDenied'] == true) {
+    return null;
   }
+  return entry['total'] as int?;
 }
