@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../core/process_runner.dart';
+import '../scan/du_scanner.dart';
+import '../settings/backup_settings.dart';
 
 const kBackupAlwaysExcluded = [
   'node_modules',
@@ -40,28 +42,78 @@ class BackupException implements Exception {
   String toString() => message;
 }
 
-String rsyncLiteral(String pattern) => pattern.contains(RegExp(r'[*?\[]'))
-    ? pattern.replaceAllMapped(RegExp(r'[\\*?\[]'), (m) => '\\${m[0]}')
-    : pattern;
+String rsyncEscape(String literal) =>
+    literal.replaceAllMapped(RegExp(r'[\\*?\[]'), (m) => '\\${m[0]}');
+
+String rsyncLiteral(String pattern) =>
+    pattern.contains(RegExp(r'[*?\[]')) ? rsyncEscape(pattern) : pattern;
+
+bool isBuildKind(String kind) => kBackupBuildDirs.contains(kind);
+
+class ExcludedDir {
+  const ExcludedDir({required this.path, required this.kind, this.bytes});
+
+  final String path;
+  final String kind;
+  final int? bytes;
+}
 
 class BackupFilter {
   const BackupFilter({
     required this.sources,
     this.ignoredBuilds = const [],
     this.protectedPaths = const [],
+    this.included = const {},
   });
 
   final List<String> sources;
   final List<String> ignoredBuilds;
   final List<String> protectedPaths;
+  final Map<String, SourceInclusions> included;
 
+  // rsync usa a primeira regra que casa: as exclusões protegidas vêm antes
+  // dos "+" que devolvem pastas ignoradas ao backup.
   List<String> get rules => [
-    for (final name in kBackupAlwaysExcluded) '- $name/',
-    for (final dir in ignoredBuilds)
-      if (_anchor(dir) case final a?) '- $a/',
     for (final path in protectedPaths)
       if (_anchor(path) case final a?) '- $a',
+    for (final source in sources) ..._includeRules(source),
+    for (final name in kBackupAlwaysExcluded) '- $name/',
+    for (final dir in ignoredBuilds)
+      if (!_buildIncluded(dir))
+        if (_anchor(dir) case final a?) '- $a/',
   ];
+
+  List<String> get keptBuilds => [
+    for (final dir in ignoredBuilds)
+      if (!_buildIncluded(dir)) dir,
+  ];
+
+  Iterable<String> _includeRules(String source) sync* {
+    final inc = included[source];
+    if (inc == null) return;
+    final root = '/${rsyncEscape(p.basename(source))}';
+    for (final kind in inc.kinds) {
+      if (!kBackupAlwaysExcluded.contains(kind)) continue;
+      final k = rsyncEscape(kind);
+      yield '+ $root/$k/***';
+      yield '+ $root/**/$k/***';
+    }
+    for (final rel in inc.paths) {
+      if (!kBackupAlwaysExcluded.contains(p.basename(rel))) continue;
+      yield '+ $root/${rsyncEscape(rel)}/***';
+    }
+  }
+
+  bool _buildIncluded(String dir) {
+    for (final source in sources) {
+      if (!p.isWithin(source, dir)) continue;
+      final inc = included[source];
+      if (inc == null) return false;
+      return inc.kinds.contains(p.basename(dir)) ||
+          inc.paths.contains(p.relative(dir, from: source));
+    }
+    return false;
+  }
 
   String? _anchor(String path) {
     for (final source in sources) {
@@ -156,19 +208,62 @@ class BackupEstimate {
 }
 
 class BackupPlanner {
-  BackupPlanner(this._runner);
+  BackupPlanner(this._runner) : _du = DuScanner(_runner);
 
   final ProcessRunner _runner;
+  final DuScanner _du;
 
   Future<BackupFilter> plan(
     List<String> sources, {
     List<String> protectedPaths = const [],
+    Map<String, SourceInclusions> included = const {},
     CancelToken? cancel,
   }) async => BackupFilter(
     sources: sources,
     ignoredBuilds: await findIgnoredBuilds(sources, cancel: cancel),
     protectedPaths: protectedPaths,
+    included: included,
   );
+
+  Future<List<ExcludedDir>> scanExclusions(
+    String source, {
+    CancelToken? cancel,
+  }) async {
+    final result = await _runner.run('find', [
+      source,
+      '-mindepth',
+      '1',
+      '-type',
+      'd',
+      ..._nameGroup(kBackupAlwaysExcluded),
+      '-prune',
+      '-print0',
+      '-o',
+      '-type',
+      'd',
+      '-name',
+      '.git',
+      '-prune',
+      '-o',
+      '-type',
+      'd',
+      ..._nameGroup(kBackupBuildDirs),
+      '-prune',
+      '-print0',
+    ], cancel: cancel);
+    final always = <String>[];
+    final builds = <String>[];
+    for (final dir in result.stdoutText.split('\x00')) {
+      if (dir.isEmpty) continue;
+      (isBuildKind(p.basename(dir)) ? builds : always).add(dir);
+    }
+    final dirs = [...always, ...await _gitFilter(builds, cancel)]..sort();
+    final sizes = await _du.sizesOf(dirs, cancel: cancel);
+    return [
+      for (final d in dirs)
+        ExcludedDir(path: d, kind: p.basename(d), bytes: sizes[d]),
+    ];
+  }
 
   Future<List<String>> findIgnoredBuilds(
     List<String> sources, {
@@ -188,20 +283,28 @@ class BackupPlanner {
       '-prune',
       '-print0',
     ], cancel: cancel);
+    return _gitFilter([
+      for (final dir in result.stdoutText.split('\x00'))
+        if (dir.isNotEmpty) dir,
+    ], cancel);
+  }
 
+  Future<List<String>> _gitFilter(
+    List<String> dirs,
+    CancelToken? cancel,
+  ) async {
     final byRepo = <String, List<String>>{};
     final roots = <String, String?>{};
-    for (final dir in result.stdoutText.split('\x00')) {
-      if (dir.isEmpty) continue;
+    for (final dir in dirs) {
       final root = _repoRoot(p.dirname(dir), roots);
       if (root == null) continue;
       byRepo.putIfAbsent(root, () => []).add(p.relative(dir, from: root));
     }
 
     final ignored = <String>[];
-    for (final MapEntry(key: root, value: dirs) in byRepo.entries) {
-      for (var i = 0; i < dirs.length; i += _gitChunk) {
-        final chunk = dirs.sublist(i, (i + _gitChunk).clamp(0, dirs.length));
+    for (final MapEntry(key: root, value: rels) in byRepo.entries) {
+      for (var i = 0; i < rels.length; i += _gitChunk) {
+        final chunk = rels.sublist(i, (i + _gitChunk).clamp(0, rels.length));
         for (final rel in await _gitIgnored(root, chunk, cancel)) {
           ignored.add(p.join(root, rel));
         }
