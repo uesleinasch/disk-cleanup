@@ -328,6 +328,10 @@ class RestoreEngine {
     );
   }
 
+  static bool _taken(String path) =>
+      FileSystemEntity.typeSync(path, followLinks: false) !=
+      FileSystemEntityType.notFound;
+
   static int? _size(String path) {
     final s = FileStat.statSync(path);
     return s.type == FileSystemEntityType.file ? s.size : null;
@@ -384,13 +388,14 @@ class RestoreEngine {
     for (final rel in decision.duplicate) {
       if (cancel?.isCancelled ?? false) throw const ScanCancelled();
       var name = duplicateName(rel, duplicateLabel);
-      for (var n = 2; File(p.join(target, name)).existsSync(); n++) {
+      for (var n = 2; _taken(p.join(target, name)); n++) {
         name = duplicateName(rel, '$duplicateLabel $n');
       }
       final r = await _runner.run('cp', [
         '-P',
         '-p',
         '--no-clobber',
+        '-T',
         '--',
         p.join(source, rel),
         p.join(target, name),

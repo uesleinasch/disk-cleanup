@@ -9,6 +9,13 @@ const kManifestName = '.disk-cleanup-manifest.json';
 
 final _secretsFile = RegExp(r'^secrets-\d{4}-\d{2}-\d{2}\.tar\.gz\.gpg$');
 
+bool isSafePathSegment(String name) =>
+    name.isNotEmpty &&
+    name != '.' &&
+    name != '..' &&
+    !name.contains('/') &&
+    !name.contains('\x00');
+
 class ManifestSource {
   const ManifestSource({required this.path, required this.name});
 
@@ -88,12 +95,16 @@ class BackupManifest {
     sources: [
       for (final s in json['sources'] as List? ?? const [])
         ManifestSource.fromJson((s as Map).cast<String, dynamic>()),
-    ],
+    ].where((s) => isSafePathSegment(s.name)).toList(),
     browsers: [
       for (final b in json['browsers'] as List? ?? const [])
         ManifestBrowser.fromJson((b as Map).cast<String, dynamic>()),
-    ],
+    ].where(_knownBrowser).toList(),
   );
+
+  static bool _knownBrowser(ManifestBrowser b) =>
+      isSafePathSegment(b.label) &&
+      kBrowserCatalog.any((spec) => spec.id == b.id);
 
   static Future<void> write(String backupDir, BackupManifest manifest) async {
     final file = File(p.join(backupDir, kManifestName));
@@ -123,6 +134,8 @@ class BackupManifest {
         }
       } on FormatException {
         // Manifesto corrompido: cai no modo sem manifesto.
+      } on TypeError {
+        // Manifesto com campos de tipo errado: cai no modo sem manifesto.
       }
     }
     final byName = {for (final s in knownSources) p.basename(s): s};

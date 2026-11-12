@@ -7,6 +7,9 @@ import 'browser_profiles.dart';
 const kRestoreReadmeName = 'LEIA-ME-RESTAURAR.md';
 const kRestoreReadmeTitle = '# Restauração do backup';
 
+String _manualReplaced([String sub = '']) =>
+    '"\$HOME/.local/share/disk-cleanup/substituidos/manual-\$(date +%F)$sub"';
+
 final _safe = RegExp(r'^[A-Za-z0-9_./=+:@,-]+$');
 
 String shellQuote(String s) =>
@@ -103,9 +106,7 @@ String restoreReadme(RestoreInfo info) {
   }
 
   final secrets = info.secrets;
-  final secretsFile = secrets == null
-      ? null
-      : inBackup(secrets.fileName);
+  final secretsFile = secrets == null ? null : inBackup(secrets.fileName);
   final day =
       '${info.date.day.toString().padLeft(2, '0')}/'
       '${info.date.month.toString().padLeft(2, '0')}/${info.date.year}';
@@ -180,10 +181,15 @@ String restoreReadme(RestoreInfo info) {
     heading('Chaves e configurações');
     keysSection = section;
     out
-      ..writeln('O `gpg` abre uma janela pedindo a senha definida no backup.')
+      ..writeln(
+        'O `gpg` abre uma janela pedindo a senha definida no backup. '
+        'Com `--skip-old-files`, o `tar` não mexe em arquivos que já '
+        'existem no computador: para trazer a versão do backup de um '
+        'deles, renomeie o arquivo local antes.',
+      )
       ..writeln();
     code([
-      'cd ~ && gpg -d $secretsFile | tar xzf -',
+      'cd ~ && gpg -d $secretsFile | tar xzf - --skip-old-files',
       if (secrets.items.contains('.ssh')) ...[
         'chmod 700 ~/.ssh',
         'chmod 600 ~/.ssh/*',
@@ -213,12 +219,16 @@ String restoreReadme(RestoreInfo info) {
 
   heading('Projetos');
   out
-    ..writeln('Cada pasta volta para onde estava:')
+    ..writeln(
+      'Cada pasta volta para onde estava. Arquivos do computador que '
+      'seriam substituídos vão antes para '
+      '`~/.local/share/disk-cleanup/substituidos/manual-<data>`:',
+    )
     ..writeln();
   code([
     for (final s in info.sources)
-      'rsync -aH --info=progress2 ${inBackup(p.basename(s))} '
-          '${local(p.dirname(s))}/',
+      'rsync -aH --info=progress2 --backup --backup-dir=${_manualReplaced()} '
+          '${inBackup(p.basename(s))} ${local(p.dirname(s))}/',
   ]);
   out
     ..writeln()
@@ -248,12 +258,15 @@ String restoreReadme(RestoreInfo info) {
       ..writeln()
       ..writeln(
         'Instale cada navegador, abra e feche uma vez, '
-        'confira que ele está fechado e copie o perfil de volta:',
+        'confira que ele está fechado e copie o perfil de volta. '
+        'O que for substituído vai para a mesma pasta de substituídos:',
       )
       ..writeln();
     code([
       for (final b in info.browsers)
-        'rsync -aH ${inBackup('$kBrowserFolder/${b.id}')}/ '
+        'rsync -aH --backup '
+            '--backup-dir=${_manualReplaced('/$kBrowserFolder/${b.id}')} '
+            '${inBackup('$kBrowserFolder/${b.id}')}/ '
             '${local(b.profilePath)}/',
     ]);
   }

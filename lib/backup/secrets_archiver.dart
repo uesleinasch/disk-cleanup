@@ -200,11 +200,19 @@ class SecretsArchiver {
           message: 'A janela de senha foi fechada. Nada foi restaurado.',
         );
       }
-      if (status.contains('bad_passphrase') ||
-          status.contains('decryption_failed')) {
+      if (_wrongPassword(status)) {
         return const SecretsResult(
           SecretsOutcome.failed,
           message: 'Senha errada. Os segredos não foram restaurados.',
+        );
+      }
+      if (status.contains('[gnupg:] decryption_failed') ||
+          status.contains('[gnupg:] badmdc')) {
+        return const SecretsResult(
+          SecretsOutcome.failed,
+          message:
+              'O pacote de segredos está danificado ou incompleto. '
+              'Nada foi restaurado.',
         );
       }
     }
@@ -217,6 +225,18 @@ class SecretsArchiver {
       );
     }
     return _failure(t, g) ?? SecretsResult(SecretsOutcome.ok, path: staging);
+  }
+
+  // O gpg 2.2 não emite BAD_PASSPHRASE na cifra simétrica e traduz o
+  // "Bad session key"; senha errada falha antes de qualquer PLAINTEXT.
+  static bool _wrongPassword(String status) {
+    if (status.contains('bad_passphrase') ||
+        status.contains('bad session key')) {
+      return true;
+    }
+    return status.contains('[gnupg:] decryption_failed') &&
+        !status.contains('[gnupg:] badmdc') &&
+        !status.contains('[gnupg:] plaintext');
   }
 
   static SecretsResult? _failure(RunResult tar, RunResult gpg) {

@@ -193,6 +193,41 @@ void main() {
       },
     );
 
+    test(
+      'manter os dois pula nomes ocupados por pasta ou symlink quebrado',
+      () async {
+        Directory(p.join(local, 'fica (backup).txt')).createSync();
+        Link(p.join(local, 'fica (backup 2).txt'))
+            .createSync(p.join(tmp.path, 'nao-existe'));
+        final a = await analyze();
+        final d = resolveConflicts(
+          a,
+          ConflictAction.keepLocal,
+          overrides: const {'fica.txt': ConflictAction.keepBoth},
+        );
+        final r = await engine.execute(
+          analysis: a,
+          decision: d,
+          replacedDir: replaced,
+          duplicateLabel: 'backup',
+          tmp: tmp,
+        );
+        expect(r.duplicated, 1);
+        expect(
+          File(p.join(local, 'fica (backup 3).txt')).readAsStringSync(),
+          'do backup',
+        );
+        expect(
+          Directory(p.join(local, 'fica (backup).txt')).listSync(),
+          isEmpty,
+        );
+        expect(
+          Link(p.join(local, 'fica (backup 2).txt')).targetSync(),
+          p.join(tmp.path, 'nao-existe'),
+        );
+      },
+    );
+
     test('manter local não toca no arquivo', () async {
       final a = await analyze();
       final d = resolveConflicts(a, ConflictAction.keepLocal);

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/process_runner.dart';
+import '../core/system_paths.dart';
 import '../services.dart';
 import '../settings/settings_controller.dart';
 import 'backup_controller.dart';
@@ -142,38 +143,63 @@ class RestoreController extends ChangeNotifier {
     notifyListeners();
     try {
       final resolved = target == null ? null : _locateBackupDir(target);
-      if (resolved == null) {
-        backupDir = null;
-        manifest = null;
-        choices = const [];
-        secretsFiles = const [];
-        _secretsPaths = const {};
+      final m = resolved == null
+          ? null
+          : await BackupManifest.load(
+              resolved,
+              knownSources: backup.config.sources,
+              home: home,
+            );
+      if (resolved == null || m == null) {
+        _clearLoaded();
         loadError = target == null
             ? 'Conecte o disco do backup ou abra uma pasta de backup.'
             : 'Não há backup em $target.';
         return;
       }
-      backupDir = resolved;
-      manifest = await BackupManifest.load(
-        resolved,
-        knownSources: backup.config.sources,
-        home: home,
-      );
       final parent = p.dirname(resolved);
-      _secretsPaths = {
+      final secretsPaths = {
         for (final n in listSecretsFiles(parent)) n: p.join(parent, n),
         for (final n in listSecretsFiles(resolved)) n: p.join(resolved, n),
       };
-      secretsFiles = _secretsPaths.keys.toList()
-        ..sort((a, b) => b.compareTo(a));
-      secretsFile = secretsFiles.firstOrNull;
-      choices = _choicesFrom(manifest!, resolved);
+      final names = secretsPaths.keys.toList()..sort((a, b) => b.compareTo(a));
+      final loaded = _choicesFrom(m, resolved, secretsPaths, names);
+      backupDir = resolved;
+      manifest = m;
+      _secretsPaths = secretsPaths;
+      secretsFiles = names;
+      secretsFile = names.firstOrNull;
+      choices = loaded;
       selected.removeWhere((id) => !choices.any((c) => c.id == id));
+    } catch (e) {
+      _clearLoaded();
+      loadError = 'Não foi possível ler o backup em $target: ${_errorText(e)}';
     } finally {
       phase = RestorePhase.idle;
       notifyListeners();
     }
   }
+
+  void _clearLoaded() {
+    backupDir = null;
+    manifest = null;
+    choices = const [];
+    secretsFiles = const [];
+    secretsFile = null;
+    _secretsPaths = const {};
+    selected.clear();
+  }
+
+  static String _errorText(Object e) => switch (e) {
+    FileSystemException(:final osError?) => osError.message,
+    FileSystemException(:final message) => message,
+    BackupException(:final message) => message,
+    _ => '$e',
+  };
+
+  static bool _isDir(String path) =>
+      FileSystemEntity.typeSync(path, followLinks: false) ==
+      FileSystemEntityType.directory;
 
   String? _locateBackupDir(String dir) {
     if (!Directory(dir).existsSync()) return null;
@@ -200,17 +226,22 @@ class RestoreController extends ChangeNotifier {
     return null;
   }
 
-  List<RestoreChoice> _choicesFrom(BackupManifest m, String dir) => [
-    if (secretsFiles.isNotEmpty)
+  List<RestoreChoice> _choicesFrom(
+    BackupManifest m,
+    String dir,
+    Map<String, String> secretsPaths,
+    List<String> secretsNames,
+  ) => [
+    if (secretsNames.isNotEmpty)
       RestoreChoice(
         kind: RestoreKind.secrets,
         id: 'segredos',
         label: 'Chaves e configurações',
-        backupPath: _secretsPaths[secretsFiles.first]!,
+        backupPath: secretsPaths[secretsNames.first]!,
         originalPath: home,
       ),
     for (final s in m.sources)
-      if (Directory(p.join(dir, s.name)).existsSync())
+      if (isSafePathSegment(s.name) && _isDir(p.join(dir, s.name)))
         RestoreChoice(
           kind: RestoreKind.folder,
           id: 'pasta:${s.name}',
@@ -219,7 +250,8 @@ class RestoreController extends ChangeNotifier {
           originalPath: s.path.isEmpty ? null : _rehome(s.path, m.home),
         ),
     for (final b in m.browsers)
-      if (Directory(p.join(dir, kBrowserFolder, b.id)).existsSync())
+      if (kBrowserCatalog.any((spec) => spec.id == b.id) &&
+          _isDir(p.join(dir, kBrowserFolder, b.id)))
         RestoreChoice(
           kind: RestoreKind.browser,
           id: 'navegador:${b.id}',
@@ -327,7 +359,6 @@ class RestoreController extends ChangeNotifier {
 
   Future<void> analyze() async {
     if (!canAnalyze || !_b.lock.acquire(this)) return;
-    await _discard();
     phase = RestorePhase.analyzing;
     error = null;
     final cancel = _cancel = CancelToken();
@@ -339,8 +370,9 @@ class RestoreController extends ChangeNotifier {
     ];
     items = ordered;
     notifyListeners();
-    _tmp = await Directory.systemTemp.createTemp('disk-cleanup-');
     try {
+      await _discard();
+      _tmp = await Directory.systemTemp.createTemp('disk-cleanup-');
       for (final (i, item) in ordered.indexed) {
         current = i;
         item.status = BackupStepStatus.running;
@@ -352,6 +384,11 @@ class RestoreController extends ChangeNotifier {
     } on ScanCancelled {
       await _discard();
       phase = RestorePhase.idle;
+    } catch (e) {
+      await _discard();
+      items = const [];
+      error = 'A análise parou: ${_errorText(e)}';
+      phase = RestorePhase.idle;
     } finally {
       current = null;
       _cancel = null;
@@ -361,14 +398,45 @@ class RestoreController extends ChangeNotifier {
   }
 
   Future<void> _analyzeItem(RestoreItem item, CancelToken cancel) async {
+    try {
+      await _analyzeChecked(item, cancel);
+    } on ScanCancelled {
+      rethrow;
+    } catch (e) {
+      item
+        ..status = BackupStepStatus.failed
+        ..message = 'Não foi possível analisar: ${_errorText(e)}';
+    }
+  }
+
+  Future<void> _analyzeChecked(RestoreItem item, CancelToken cancel) async {
     final c = item.choice;
     final target = targetFor(c)!;
     item.target = target;
-    final roots = [home, ...settings.value.mappedDirs];
+    final roots = [
+      home,
+      ...allowedMappedDirs(settings.value.mappedDirs, home: home),
+    ];
     if (!await isRestorableTarget(target, roots)) {
       item
         ..status = BackupStepStatus.failed
         ..message = 'Só dá para restaurar dentro da sua pasta pessoal.';
+      return;
+    }
+    if (destination == RestoreDestination.separate &&
+        customTargets[c.id] == null &&
+        !p.isWithin(separateRoot, target)) {
+      item
+        ..status = BackupStepStatus.failed
+        ..message = 'O backup tem um nome de pasta inválido: ${c.label}.';
+      return;
+    }
+    final dir = backupDir;
+    if (c.kind != RestoreKind.secrets &&
+        (dir == null || !p.isWithin(dir, p.normalize(c.backupPath)))) {
+      item
+        ..status = BackupStepStatus.failed
+        ..message = 'O backup tem um nome de pasta inválido: ${c.label}.';
       return;
     }
     if (c.kind == RestoreKind.browser &&
@@ -387,6 +455,7 @@ class RestoreController extends ChangeNotifier {
       }
     }
     var source = c.backupPath;
+    var only = item.subpaths;
     if (c.kind == RestoreKind.secrets) {
       final staging = _staging ??= await Directory(services.runtimeDir)
           .createTemp('disk-cleanup-restaurar-');
@@ -405,14 +474,27 @@ class RestoreController extends ChangeNotifier {
         return;
       }
       source = staging.path;
+      only = _secretEntries(staging.path, item.subpaths);
     }
     item.source = source;
+    if (only != null && only.isEmpty) {
+      item
+        ..status = BackupStepStatus.pending
+        ..analysis = RestoreAnalysis(
+          source: source,
+          target: target,
+          created: const [],
+          conflicts: const [],
+        )
+        ..message = 'Nada a restaurar: já está igual.';
+      return;
+    }
     try {
       final analysis = await _engine.analyze(
         source: source,
         target: target,
         tmp: _tmp!,
-        subpaths: item.subpaths,
+        subpaths: only,
         cancel: cancel,
       );
       item
@@ -427,6 +509,31 @@ class RestoreController extends ChangeNotifier {
         ..message = e.message;
     }
   }
+
+  static List<String> _secretEntries(String staging, List<String>? chosen) {
+    bool present(String rel) =>
+        FileSystemEntity.typeSync(p.join(staging, rel), followLinks: false) !=
+        FileSystemEntityType.notFound;
+    final allowed = {
+      for (final rel in kSecretCatalog)
+        if (present(rel)) rel,
+      for (final e in Directory(staging).listSync(followLinks: false))
+        if (e is! Directory && _isSecretExtra(p.basename(e.path)))
+          p.basename(e.path),
+    }.toList()..sort();
+    if (chosen == null) return allowed;
+    return {
+      for (final rel in chosen)
+        for (final a in allowed)
+          if (a == rel || p.isWithin(a, rel))
+            rel
+          else if (p.isWithin(rel, a))
+            a,
+    }.toList()..sort();
+  }
+
+  static bool _isSecretExtra(String name) =>
+      name.startsWith('.gitconfig-') || name.startsWith('.gitignore');
 
   void setRule(ConflictAction action) {
     rule = action;
@@ -497,7 +604,15 @@ class RestoreController extends ChangeNotifier {
         }
         item.status = BackupStepStatus.running;
         notifyListeners();
-        await _runItem(item, cancel);
+        try {
+          await _runItem(item, cancel);
+        } on ScanCancelled {
+          rethrow;
+        } catch (e) {
+          item
+            ..status = BackupStepStatus.failed
+            ..message = 'A restauração falhou: ${_errorText(e)}';
+        }
         notifyListeners();
       }
     } on ScanCancelled {
@@ -506,6 +621,14 @@ class RestoreController extends ChangeNotifier {
             (item.status == BackupStepStatus.pending &&
                 item.analysis != null)) {
           item.status = BackupStepStatus.cancelled;
+        }
+      }
+    } catch (e) {
+      for (final item in items) {
+        if (item.status == BackupStepStatus.running) {
+          item
+            ..status = BackupStepStatus.failed
+            ..message = 'A restauração falhou: ${_errorText(e)}';
         }
       }
     } finally {
@@ -569,7 +692,11 @@ class RestoreController extends ChangeNotifier {
 
   BackupStepStatus get outcome {
     final s = items.map((i) => i.status).toSet();
-    if (s.contains(BackupStepStatus.failed)) return BackupStepStatus.failed;
+    if (s.contains(BackupStepStatus.failed) ||
+        s.contains(BackupStepStatus.running) ||
+        s.contains(BackupStepStatus.pending)) {
+      return BackupStepStatus.failed;
+    }
     if (s.contains(BackupStepStatus.cancelled)) {
       return BackupStepStatus.cancelled;
     }
@@ -590,7 +717,11 @@ class RestoreController extends ChangeNotifier {
 
   Future<void> _discard() async {
     for (final d in [_staging, _tmp]) {
-      if (d != null && d.existsSync()) await d.delete(recursive: true);
+      try {
+        if (d != null && d.existsSync()) await d.delete(recursive: true);
+      } on FileSystemException {
+        continue;
+      }
     }
     _staging = null;
     _tmp = null;
