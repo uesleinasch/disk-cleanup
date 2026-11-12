@@ -124,6 +124,33 @@ void main() {
           '-prune',
           '-print0',
         ], RunResult(0, '${path('repo/dist')}\x00'.codeUnits, ''))
+        ..when('find', [
+          path('repo/dist'),
+          '-mindepth',
+          '1',
+          '-type',
+          'd',
+          '(',
+          for (final (i, n) in [...kBackupAlwaysExcluded, '.git'].indexed) ...[
+            if (i > 0) '-o',
+            '-name',
+            n,
+          ],
+          ')',
+          '-prune',
+          '-o',
+          '-type',
+          'd',
+          '(',
+          for (final (i, n) in kBackupBuildDirs.indexed) ...[
+            if (i > 0) '-o',
+            '-name',
+            n,
+          ],
+          ')',
+          '-prune',
+          '-print0',
+        ], const RunResult(0, [], ''))
         ..when('git', [
           '-c',
           'core.quotePath=false',
@@ -338,6 +365,76 @@ void main() {
     );
   });
 
+  group('scanExclusions + backup', () {
+    test(
+      'lista o que sai de dentro de build versionado, igual ao rsync',
+      () async {
+        file('src/app/.gitignore', 'dist/target/\n');
+        file('src/app/dist/versionado.js');
+        file('src/app/dist/node_modules/x.js');
+        file('src/app/dist/target/y.bin');
+        file('src/app/dist/out/z.txt');
+        git('src/app', ['init', '-q']);
+        git('src/app', [
+          'add',
+          '-f',
+          'dist/versionado.js',
+          'dist/out/z.txt',
+          '.gitignore',
+        ]);
+
+        final found = await planner.scanExclusions(path('src'));
+        final filter = await planner.plan([path('src')]);
+        final copied = await copy(filter);
+
+        expect(
+          [for (final d in found) d.path],
+          [path('src/app/dist/node_modules'), path('src/app/dist/target')],
+        );
+        expect(filter.ignoredBuilds, [path('src/app/dist/target')]);
+        expect(copied.where((f) => !f.startsWith('src/app/.git/')).toSet(), {
+          'src/app/.gitignore',
+          'src/app/dist/versionado.js',
+          'src/app/dist/out/z.txt',
+        });
+      },
+    );
+  });
+
+  group('filtro por merge', () {
+    test('P protege do espelhar sem impedir o envio', () async {
+      file('src/volta.txt', 'local novo');
+      file('dest/src/volta.txt', 'antigo');
+      File(path('src/volta.txt')).setLastModifiedSync(DateTime(2030));
+      file('dest/src/guardado/a.txt');
+      file('dest/src/guardado.txt');
+      file('dest/src/some.txt');
+      final rules = File(path('rules.bin'));
+      await rules.writeAsString(
+        [
+          'P /src/volta.txt',
+          'P /src/guardado',
+          'P /src/guardado/***',
+          'P /src/guardado.txt',
+          '- node_modules/',
+        ].join('\x00'),
+      );
+      final r = Process.runSync('rsync', [
+        ...backupRsyncArgs(
+          filterFile: rules.path,
+          sources: [path('src')],
+          destination: path('dest'),
+          mirror: true,
+        ),
+      ]);
+      expect(r.exitCode, 0, reason: '${r.stderr}');
+      expect(File(path('dest/src/volta.txt')).readAsStringSync(), 'local novo');
+      expect(File(path('dest/src/guardado/a.txt')).existsSync(), isTrue);
+      expect(File(path('dest/src/guardado.txt')).existsSync(), isTrue);
+      expect(File(path('dest/src/some.txt')).existsSync(), isFalse);
+    });
+  });
+
   group('estimate', () {
     test('mede o total e o que falta copiar', () async {
       file('src/a.bin', 'x' * 1000);
@@ -429,7 +526,7 @@ void main() {
         '--stats',
         '--delete',
         '--from0',
-        '--exclude-from=/tmp/f',
+        '--filter=. /tmp/f',
         '/home/u/projetos',
         '/media/u/Disco/backup/',
       ],

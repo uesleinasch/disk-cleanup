@@ -1,9 +1,14 @@
 import 'dart:io';
 
 import 'package:disk_cleanup/backup/backup_controller.dart';
+import 'package:disk_cleanup/backup/backup_lock.dart';
 import 'package:disk_cleanup/backup/backup_manifest.dart';
 import 'package:disk_cleanup/backup/backup_planner.dart';
+import 'package:disk_cleanup/backup/backup_services.dart';
 import 'package:disk_cleanup/backup/secrets_archiver.dart';
+import 'package:disk_cleanup/core/process_runner.dart';
+import 'package:disk_cleanup/services.dart';
+import 'package:disk_cleanup/settings/backup_settings.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
@@ -297,30 +302,35 @@ void main() {
     expect(c.phase, BackupPhase.idle);
   });
 
-  test('arquivos antigos da raiz do disco vão para a pasta do backup', () async {
-    await configure();
-    File(p.join(f.hd, 'secrets-2026-11-01.tar.gz.gpg')).writeAsStringSync('x');
-    File(p.join(f.hd, 'LEIA-ME-RESTAURAR.md'))
-        .writeAsStringSync('# Restauração do backup\n\nantigo\n');
-    File(p.join(f.hd, 'notas.txt')).writeAsStringSync('da pessoa');
+  test(
+    'arquivos antigos da raiz do disco vão para a pasta do backup',
+    () async {
+      await configure();
+      File(p.join(f.hd, 'secrets-2026-11-01.tar.gz.gpg'))
+          .writeAsStringSync('x');
+      File(p.join(f.hd, 'LEIA-ME-RESTAURAR.md'))
+          .writeAsStringSync('# Restauração do backup\n\nantigo\n');
+      File(p.join(f.hd, 'notas.txt')).writeAsStringSync('da pessoa');
 
-    await c.start();
+      await c.start();
 
-    expect(c.outcome, BackupStepStatus.done);
-    expect(
-      [for (final e in Directory(f.hd).listSync()) p.basename(e.path)]..sort(),
-      ['backup', 'notas.txt'],
-    );
-    final backup = p.join(f.hd, 'backup');
-    expect(
-      File(p.join(backup, 'secrets-2026-11-01.tar.gz.gpg')).existsSync(),
-      isTrue,
-    );
-    expect(
-      File(p.join(backup, 'LEIA-ME-RESTAURAR.md')).readAsStringSync(),
-      isNot(contains('antigo')),
-    );
-  });
+      expect(c.outcome, BackupStepStatus.done);
+      expect(
+        [for (final e in Directory(f.hd).listSync()) p.basename(e.path)]
+          ..sort(),
+        ['backup', 'notas.txt'],
+      );
+      final backup = p.join(f.hd, 'backup');
+      expect(
+        File(p.join(backup, 'secrets-2026-11-01.tar.gz.gpg')).existsSync(),
+        isTrue,
+      );
+      expect(
+        File(p.join(backup, 'LEIA-ME-RESTAURAR.md')).readAsStringSync(),
+        isNot(contains('antigo')),
+      );
+    },
+  );
 
   test('navegador aberto é pulado e pode tentar de novo', () async {
     await configure();
@@ -404,6 +414,88 @@ void main() {
     ]);
     expect(c.outcome, BackupStepStatus.cancelled);
     expect(f.settings.value.backup.lastBackupAt, isNull);
-    expect(File(p.join(f.hd, 'backup', 'LEIA-ME-RESTAURAR.md')).existsSync(), isFalse);
+    expect(
+      File(p.join(f.hd, 'backup', 'LEIA-ME-RESTAURAR.md')).existsSync(),
+      isFalse,
+    );
   });
+
+  test('trava não é reentrante', () {
+    final lock = BackupLock();
+    final owner = Object();
+    expect(lock.acquire(owner), isTrue);
+    expect(lock.acquire(owner), isFalse);
+    expect(lock.acquire(Object()), isFalse);
+    lock.release(owner);
+    expect(lock.acquire(owner), isTrue);
+  });
+
+  test('resolvendo pendentes, backup e cálculo esperam', () async {
+    await configure();
+    final resolving = c.resolvePending(const {});
+    expect(c.resolving, isTrue);
+    expect(c.canRun, isFalse);
+    await c.start();
+    await c.calculate();
+    expect(c.steps, isEmpty);
+    expect(c.estimate, isNull);
+    expect(await c.resolvePending(const {}), contains('Espere'));
+    expect(await resolving, isNull);
+    expect(c.canRun, isTrue);
+    expect(f.services.backup.lock.isHeld, isFalse);
+  });
+
+  test('erro inesperado numa etapa falha a etapa e solta a trava', () async {
+    final b = f.services.backup;
+    final services = Services(
+      home: f.home,
+      runner: f.services.runner,
+      settingsStore: f.services.settingsStore,
+      snapshots: f.services.snapshots,
+      trashDir: f.services.trashDir,
+      backup: BackupServices(
+        disks: b.disks,
+        planner: _BrokenPlanner(),
+        rsync: b.rsync,
+        browsers: b.browsers,
+        secrets: b.secrets,
+        lock: b.lock,
+      ),
+    );
+    final broken = BackupController(services, f.settings, now: () => now);
+    addTearDown(broken.dispose);
+    await broken.refresh();
+    await broken.chooseDestination(f.hd);
+    await broken.addSource(p.join(f.home, 'projetos'));
+
+    await broken.start();
+
+    expect(broken.steps.first.status, BackupStepStatus.failed);
+    expect(broken.steps.first.message, contains('Erro inesperado'));
+    expect(broken.outcome, BackupStepStatus.failed);
+    expect(broken.phase, BackupPhase.finished);
+    expect(b.lock.isHeld, isFalse);
+  });
+
+  test('etapa presa em andamento conta como falha', () async {
+    await configure();
+    await c.start();
+    c.steps = [
+      ...c.steps.take(1),
+      c.steps[1].copyWith(status: BackupStepStatus.running),
+    ];
+    expect(c.outcome, BackupStepStatus.failed);
+  });
+}
+
+class _BrokenPlanner extends BackupPlanner {
+  _BrokenPlanner() : super(SystemProcessRunner());
+
+  @override
+  Future<BackupFilter> plan(
+    List<String> sources, {
+    List<String> protectedPaths = const [],
+    Map<String, SourceInclusions> included = const {},
+    CancelToken? cancel,
+  }) async => throw StateError('quebrado');
 }

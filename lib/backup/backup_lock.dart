@@ -6,7 +6,7 @@ class BackupLock {
   bool heldByOther(Object me) => _owner != null && !identical(_owner, me);
 
   bool acquire(Object owner) {
-    if (heldByOther(owner)) return false;
+    if (_owner != null) return false;
     _owner = owner;
     return true;
   }
