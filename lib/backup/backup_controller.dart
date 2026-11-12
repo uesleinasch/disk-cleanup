@@ -95,6 +95,22 @@ bool validBackupFolderName(String name) =>
     name != '.' &&
     name != '..';
 
+class ExclusionScan {
+  const ExclusionScan(this.dirs) : loading = false, failed = false;
+  const ExclusionScan.loading()
+    : dirs = const [],
+      loading = true,
+      failed = false;
+  const ExclusionScan.failed()
+    : dirs = const [],
+      loading = false,
+      failed = true;
+
+  final List<ExcludedDir> dirs;
+  final bool loading;
+  final bool failed;
+}
+
 class BackupController extends ChangeNotifier {
   BackupController(this.services, this.settings, {DateTime Function()? now})
     : _now = now ?? DateTime.now;
@@ -119,6 +135,7 @@ class BackupController extends ChangeNotifier {
   List<PendingItem> pending = const [];
   Set<String> keepOnDisk = const {};
   bool resolving = false;
+  Map<String, ExclusionScan> exclusions = const {};
 
   BackupPhase phase = BackupPhase.idle;
   BackupEstimate? estimate;
@@ -245,8 +262,100 @@ class BackupController extends ChangeNotifier {
     return null;
   }
 
-  Future<void> removeSource(String dir) =>
-      _update((b) => b.copyWith(sources: [...b.sources]..remove(dir)));
+  Future<void> removeSource(String dir) {
+    exclusions = {...exclusions}..remove(dir);
+    return _update(
+      (b) => b.copyWith(
+        sources: [...b.sources]..remove(dir),
+        included: {...b.included}..remove(dir),
+      ),
+    );
+  }
+
+  Future<void> loadExclusions(String source, {bool force = false}) async {
+    final current = exclusions[source];
+    if (current != null && (current.loading || !force)) return;
+    exclusions = {...exclusions, source: const ExclusionScan.loading()};
+    notifyListeners();
+    ExclusionScan next;
+    try {
+      next = ExclusionScan(await _b.planner.scanExclusions(source));
+    } on Object {
+      next = const ExclusionScan.failed();
+    }
+    if (!config.sources.contains(source)) return;
+    exclusions = {...exclusions, source: next};
+    notifyListeners();
+  }
+
+  List<(String, String)> protectedIn(String source) => [
+    for (final rel in {...kSecretCatalog, ...secretChoices})
+      if (_existsWithin(source, p.join(home, rel)))
+        (p.join(home, rel), 'Chaves e configurações'),
+    for (final spec in kBrowserCatalog)
+      for (final rel in spec.paths)
+        if (_existsWithin(source, p.join(home, rel)))
+          (p.join(home, rel), 'Navegadores'),
+  ];
+
+  bool _existsWithin(String source, String path) =>
+      p.isWithin(source, path) &&
+      FileSystemEntity.typeSync(path, followLinks: false) !=
+          FileSystemEntityType.notFound;
+
+  SourceInclusions inclusionsOf(String source) =>
+      config.included[source] ?? const SourceInclusions();
+
+  bool isIncluded(String source, ExcludedDir dir) {
+    final inc = inclusionsOf(source);
+    return inc.kinds.contains(dir.kind) ||
+        inc.paths.contains(p.relative(dir.path, from: source));
+  }
+
+  bool? kindState(String source, String kind) {
+    final inc = inclusionsOf(source);
+    if (inc.kinds.contains(kind)) return true;
+    final dirs = exclusions[source]?.dirs ?? const <ExcludedDir>[];
+    return dirs.any((d) => d.kind == kind && isIncluded(source, d))
+        ? null
+        : false;
+  }
+
+  Future<void> setKindIncluded(String source, String kind, bool included) {
+    final inc = inclusionsOf(source);
+    final paths = {
+      for (final rel in inc.paths)
+        if (p.basename(rel) != kind) rel,
+    };
+    final kinds = {...inc.kinds}..remove(kind);
+    if (included) kinds.add(kind);
+    return _setInclusions(source, SourceInclusions(kinds: kinds, paths: paths));
+  }
+
+  Future<void> setPathIncluded(String source, ExcludedDir dir, bool included) {
+    final inc = inclusionsOf(source);
+    final rel = p.relative(dir.path, from: source);
+    final kinds = {...inc.kinds};
+    final paths = {...inc.paths};
+    if (kinds.remove(dir.kind)) {
+      for (final d in exclusions[source]?.dirs ?? const <ExcludedDir>[]) {
+        if (d.kind == dir.kind) paths.add(p.relative(d.path, from: source));
+      }
+    }
+    if (included) {
+      paths.add(rel);
+    } else {
+      paths.remove(rel);
+    }
+    return _setInclusions(source, SourceInclusions(kinds: kinds, paths: paths));
+  }
+
+  Future<void> _setInclusions(String source, SourceInclusions inc) =>
+      _update((b) {
+        final included = {...b.included}..remove(source);
+        if (!inc.isEmpty) included[source] = inc;
+        return b.copyWith(included: included);
+      });
 
   Future<void> setFolderName(String name) =>
       _update((b) => b.copyWith(folderName: name.trim()));
@@ -370,6 +479,7 @@ class BackupController extends ChangeNotifier {
     final filter = await _b.planner.plan(
       config.sources,
       protectedPaths: _protectedPaths(),
+      included: config.included,
       cancel: cancel,
     );
     final rules = File(p.join(tmp.path, 'regras'));
@@ -396,7 +506,7 @@ class BackupController extends ChangeNotifier {
     try {
       final (filter, rules) = await _plan(tmp, cancel);
       estimate = await _estimate(rules, cancel);
-      ignoredBuilds = filter.ignoredBuilds.length;
+      ignoredBuilds = filter.keptBuilds.length;
     } on BackupException catch (e) {
       estimateError = e.message;
     } on ScanCancelled {
@@ -538,7 +648,7 @@ class BackupController extends ChangeNotifier {
   ) async {
     final (filter, rules) = await _plan(tmp, cancel);
     _rulesFile = rules;
-    ignoredBuilds = filter.ignoredBuilds.length;
+    ignoredBuilds = filter.keptBuilds.length;
     final est = estimate = await _estimate(rules, cancel);
     final free = (await _b.disks.mountOf(_runDestination!))?.available ?? 0;
     if (est.transferBytes > free) {
@@ -691,10 +801,10 @@ class BackupController extends ChangeNotifier {
     if (holds.isEmpty) return rules;
     final out = File(p.join(tmp.path, 'regras-sync'));
     final base = await File(rules).readAsBytes();
+    // Pendentes antes do filtro: um "+" de pasta incluída não pode furá-los.
     await out.writeAsBytes([
-      ...base,
-      if (base.isNotEmpty && base.last != 0) 0,
       ...utf8.encode(holds.join('\x00')),
+      if (base.isNotEmpty) ...[0, ...base],
     ]);
     return out.path;
   }

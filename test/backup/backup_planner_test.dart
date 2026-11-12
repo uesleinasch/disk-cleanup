@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:disk_cleanup/backup/backup_planner.dart';
 import 'package:disk_cleanup/core/process_runner.dart';
+import 'package:disk_cleanup/settings/backup_settings.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
@@ -229,6 +230,112 @@ void main() {
 
       expect(await copy(filter), {'home/notas.txt'});
     });
+  });
+
+  group('inclusões', () {
+    test('tipo incluído volta em qualquer nível só naquela origem', () async {
+      file('src/node_modules/raiz.js');
+      file('src/a/node_modules/x/node_modules/y.js');
+      file('src/a/node_modules/x/.cache/z');
+      file('src/a/.venv/bin/python');
+      file('outra/node_modules/w.js');
+      file('outra/ok.txt');
+
+      final filter = BackupFilter(
+        sources: [path('src'), path('outra')],
+        included: {
+          path('src'): const SourceInclusions(kinds: {'node_modules'}),
+        },
+      );
+
+      expect(await copy(filter), {
+        'src/node_modules/raiz.js',
+        'src/a/node_modules/x/node_modules/y.js',
+        'src/a/node_modules/x/.cache/z',
+        'outra/ok.txt',
+      });
+    });
+
+    test('caminho incluído volta sozinho, com curingas no nome', () async {
+      file('src/a [1]/node_modules/x.js');
+      file('src/b/node_modules/y.js');
+
+      final filter = BackupFilter(
+        sources: [path('src')],
+        included: {
+          path('src'): const SourceInclusions(paths: {'a [1]/node_modules'}),
+        },
+      );
+
+      expect(await copy(filter), {'src/a [1]/node_modules/x.js'});
+    });
+
+    test('builds incluídos por tipo ou caminho saem das regras', () async {
+      file('src/app/dist/a.js');
+      file('src/app/build/b.js');
+      file('src/web/dist/c.js');
+
+      final filter = BackupFilter(
+        sources: [path('src')],
+        ignoredBuilds: [
+          path('src/app/build'),
+          path('src/app/dist'),
+          path('src/web/dist'),
+        ],
+        included: {
+          path('src'): const SourceInclusions(
+            kinds: {'build'},
+            paths: {'web/dist'},
+          ),
+        },
+      );
+
+      expect(filter.keptBuilds, [path('src/app/dist')]);
+      expect(await copy(filter), {'src/app/build/b.js', 'src/web/dist/c.js'});
+    });
+
+    test('protegidos continuam fora mesmo dentro de algo incluído', () async {
+      file('home/.cache/app/x');
+      file('home/.cache/segredo/chave');
+
+      final filter = BackupFilter(
+        sources: [path('home')],
+        protectedPaths: [path('home/.cache/segredo')],
+        included: {
+          path('home'): const SourceInclusions(kinds: {'.cache'}),
+        },
+      );
+
+      expect(await copy(filter), {'home/.cache/app/x'});
+    });
+  });
+
+  group('scanExclusions', () {
+    test(
+      'lista o que fica fora, com tamanho, sem descer nem ver .git',
+      () async {
+        file('src/app/.gitignore', 'dist/\n');
+        file('src/app/dist/a.js', '12345');
+        file('src/app/build/versionado.txt');
+        file('src/app/node_modules/pkg/dist/x.js');
+        file('src/web/.venv/bin/python');
+        git('src/app', ['init', '-q']);
+        git('src/app', ['add', '-f', 'build/versionado.txt']);
+        Directory(path('src/app/.git/node_modules')).createSync();
+
+        final found = await planner.scanExclusions(path('src'));
+
+        expect(
+          [for (final d in found) (d.path, d.kind)],
+          [
+            (path('src/app/dist'), 'dist'),
+            (path('src/app/node_modules'), 'node_modules'),
+            (path('src/web/.venv'), '.venv'),
+          ],
+        );
+        expect(found.every((d) => d.bytes != null && d.bytes! > 0), isTrue);
+      },
+    );
   });
 
   group('estimate', () {

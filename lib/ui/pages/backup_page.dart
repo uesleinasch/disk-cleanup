@@ -8,6 +8,7 @@ import '../../backup/disk_targets.dart';
 import '../../backup/restore_controller.dart';
 import '../../core/format.dart';
 import '../theme/severity_colors.dart';
+import '../widgets/backup_exclusions.dart';
 import '../widgets/backup_widgets.dart';
 import '../widgets/common.dart';
 import 'pending_tab.dart';
@@ -384,11 +385,12 @@ class _SourcesCard extends StatelessWidget {
           const CardTitle(
             'Pastas',
             'Copiadas sem dependências, caches e builds ignorados pelo git. '
+                'Abra "O que fica fora do backup" para ver e escolher. '
                 'Cada uma vira uma pasta com o mesmo nome no backup.',
           ),
           if (c.config.sources.isEmpty)
             Text('Nenhuma pasta escolhida ainda.', style: text.bodyMedium),
-          for (final s in c.config.sources)
+          for (final s in c.config.sources) ...[
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Symbols.folder_rounded),
@@ -417,6 +419,8 @@ class _SourcesCard extends StatelessWidget {
                 ],
               ),
             ),
+            SourceExclusions(controller: c, source: s),
+          ],
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,

@@ -88,6 +88,38 @@ void main() {
   });
 
   for (final size in const [Size(720, 560), Size(1920, 1080)]) {
+    testWidgets('acordeão mostra o que fica fora e inclui em $size', (t) async {
+      f.file('projetos/web/node_modules/b/i.js');
+      await pump(t, size);
+      final src = p.join(f.home, 'projetos');
+      String? error = 'pendente';
+      c.addSource(src).then((e) => error = e);
+      await waitFor(t, () => error != 'pendente');
+      await t.runAsync(() => c.loadExclusions(src));
+
+      final header = find.text('O que fica fora do backup');
+      await t.ensureVisible(header);
+      await t.pumpAndSettle();
+      await t.tap(header);
+      await t.pumpAndSettle();
+
+      expect(find.textContaining(RegExp(r'^2 pastas, \d')), findsNWidgets(2));
+      expect(find.text('node_modules'), findsOneWidget);
+      final group = find.byKey(Key('tipo-$src-node_modules'));
+      final box = find.descendant(of: group, matching: find.byType(Checkbox));
+      await t.ensureVisible(box.first);
+      await t.pumpAndSettle();
+      await t.tap(box.first);
+      final nothingOut = find.text('Nada fica fora desta pasta');
+      await waitFor(t, () => nothingOut.evaluate().isNotEmpty);
+
+      expect(c.inclusionsOf(src).kinds, {'node_modules'});
+      expect(find.textContaining('todas entram no backup'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  }
+
+  for (final size in const [Size(720, 560), Size(1920, 1080)]) {
     testWidgets('resumo com navegador pulado sem overflow em $size', (t) async {
       f.openChrome();
       await pump(t, size);

@@ -41,6 +41,48 @@ class BackupTarget {
   int get hashCode => Object.hash(id, label, relPath);
 }
 
+bool _setEquals(Set<String> a, Set<String> b) =>
+    a.length == b.length && a.containsAll(b);
+
+bool _mapEquals(
+  Map<String, SourceInclusions> a,
+  Map<String, SourceInclusions> b,
+) =>
+    a.length == b.length &&
+    a.entries.every((e) => b.containsKey(e.key) && b[e.key] == e.value);
+
+class SourceInclusions {
+  const SourceInclusions({this.kinds = const {}, this.paths = const {}});
+
+  final Set<String> kinds;
+  final Set<String> paths;
+
+  bool get isEmpty => kinds.isEmpty && paths.isEmpty;
+
+  Map<String, Object?> toJson() => {
+    'kinds': kinds.toList()..sort(),
+    'paths': paths.toList()..sort(),
+  };
+
+  factory SourceInclusions.fromJson(Map<String, Object?> json) =>
+      SourceInclusions(
+        kinds: {...?(json['kinds'] as List<Object?>?)?.cast<String>()},
+        paths: {...?(json['paths'] as List<Object?>?)?.cast<String>()},
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is SourceInclusions &&
+      _setEquals(other.kinds, kinds) &&
+      _setEquals(other.paths, paths);
+
+  @override
+  int get hashCode => Object.hash(
+    Object.hashAllUnordered(kinds),
+    Object.hashAllUnordered(paths),
+  );
+}
+
 class BackupSettings {
   const BackupSettings({
     this.sources = const [],
@@ -54,6 +96,7 @@ class BackupSettings {
     this.reminderDays = 7,
     this.autoSyncOnConnect = false,
     this.autoSyncHours = 0,
+    this.included = const {},
   });
 
   final List<String> sources;
@@ -67,6 +110,7 @@ class BackupSettings {
   final int reminderDays;
   final bool autoSyncOnConnect;
   final int autoSyncHours;
+  final Map<String, SourceInclusions> included;
 
   BackupSettings copyWith({
     List<String>? sources,
@@ -80,6 +124,7 @@ class BackupSettings {
     int? reminderDays,
     bool? autoSyncOnConnect,
     int? autoSyncHours,
+    Map<String, SourceInclusions>? included,
     bool clearTarget = false,
   }) => BackupSettings(
     sources: sources ?? this.sources,
@@ -93,6 +138,7 @@ class BackupSettings {
     reminderDays: reminderDays ?? this.reminderDays,
     autoSyncOnConnect: autoSyncOnConnect ?? this.autoSyncOnConnect,
     autoSyncHours: autoSyncHours ?? this.autoSyncHours,
+    included: included ?? this.included,
   );
 
   Map<String, Object?> toJson() => {
@@ -107,12 +153,17 @@ class BackupSettings {
     'reminderDays': reminderDays,
     'autoSyncOnConnect': autoSyncOnConnect,
     'autoSyncHours': autoSyncHours,
+    'included': {
+      for (final MapEntry(:key, :value) in included.entries)
+        key: value.toJson(),
+    },
   };
 
   factory BackupSettings.fromJson(Map<String, Object?> json) {
     const d = BackupSettings();
     final target = json['target'] as Map<String, Object?>?;
     final last = json['lastBackupAt'] as String?;
+    final included = json['included'] as Map<String, Object?>?;
     return BackupSettings(
       sources: (json['sources'] as List<Object?>?)?.cast<String>() ?? d.sources,
       target: target == null ? null : BackupTarget.fromJson(target),
@@ -126,6 +177,10 @@ class BackupSettings {
       autoSyncOnConnect:
           json['autoSyncOnConnect'] as bool? ?? d.autoSyncOnConnect,
       autoSyncHours: json['autoSyncHours'] as int? ?? d.autoSyncHours,
+      included: {
+        for (final MapEntry(:key, :value) in (included ?? const {}).entries)
+          key: SourceInclusions.fromJson(value! as Map<String, Object?>),
+      },
     );
   }
 
@@ -142,7 +197,8 @@ class BackupSettings {
       other.lastBackupAt == lastBackupAt &&
       other.reminderDays == reminderDays &&
       other.autoSyncOnConnect == autoSyncOnConnect &&
-      other.autoSyncHours == autoSyncHours;
+      other.autoSyncHours == autoSyncHours &&
+      _mapEquals(other.included, included);
 
   @override
   int get hashCode => Object.hash(
@@ -157,5 +213,9 @@ class BackupSettings {
     reminderDays,
     autoSyncOnConnect,
     autoSyncHours,
+    Object.hashAllUnordered([
+      for (final MapEntry(:key, :value) in included.entries)
+        Object.hash(key, value),
+    ]),
   );
 }
