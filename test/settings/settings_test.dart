@@ -57,6 +57,12 @@ void main() {
       reminderDays: 14,
       autoSyncOnConnect: true,
       autoSyncHours: 6,
+      included: {
+        '/home/u/projetos': const SourceInclusions(
+          kinds: {'node_modules'},
+          paths: {'app/dist'},
+        ),
+      },
     );
 
     test('padrões', () {
@@ -73,6 +79,7 @@ void main() {
       expect(b.reminderDays, 7);
       expect(b.autoSyncOnConnect, isFalse);
       expect(b.autoSyncHours, 0);
+      expect(b.included, isEmpty);
     });
 
     test('round-trip JSON preserva todos os campos', () {

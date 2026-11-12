@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:disk_cleanup/backup/backup_controller.dart';
 import 'package:disk_cleanup/backup/backup_manifest.dart';
+import 'package:disk_cleanup/backup/backup_planner.dart';
 import 'package:disk_cleanup/backup/secrets_archiver.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -135,6 +136,88 @@ void main() {
       expect(c.selectedSecrets, ['.ssh', 'chave.pem']);
       await c.toggleSecret('.ssh');
       expect(c.selectedSecrets, ['chave.pem']);
+    });
+  });
+
+  group('o que fica fora', () {
+    String src() => p.join(f.home, 'projetos');
+    ExcludedDir dirOf(String rel) => c.exclusions[src()]!.dirs.firstWhere(
+      (d) => d.path == p.join(src(), rel),
+    );
+
+    setUp(() async {
+      f.file('projetos/web/node_modules/b/i.js');
+      await configure();
+      await c.loadExclusions(src());
+    });
+
+    test('lista por pasta e marca tipo e caminho', () async {
+      expect(
+        [for (final d in c.exclusions[src()]!.dirs) d.path],
+        [p.join(src(), 'app/node_modules'), p.join(src(), 'web/node_modules')],
+      );
+      expect(c.kindState(src(), 'node_modules'), isFalse);
+
+      await c.setPathIncluded(src(), dirOf('app/node_modules'), true);
+      expect(c.kindState(src(), 'node_modules'), isNull);
+
+      await c.setKindIncluded(src(), 'node_modules', true);
+      expect(c.inclusionsOf(src()).kinds, {'node_modules'});
+      expect(c.inclusionsOf(src()).paths, isEmpty);
+
+      await c.setPathIncluded(src(), dirOf('web/node_modules'), false);
+      expect(c.inclusionsOf(src()).kinds, isEmpty);
+      expect(c.inclusionsOf(src()).paths, {'app/node_modules'});
+
+      await c.setPathIncluded(src(), dirOf('app/node_modules'), false);
+      expect(c.config.included, isEmpty);
+    });
+
+    test('incluído entra no backup e sai junto com a pasta', () async {
+      await c.setPathIncluded(src(), dirOf('app/node_modules'), true);
+      await c.start();
+
+      final copied = p.join(
+        f.hd,
+        'backup/projetos/app/node_modules/dep/index.js',
+      );
+      expect(File(copied).existsSync(), isTrue);
+      expect(
+        File(p.join(f.hd, 'backup/projetos/web/node_modules')).existsSync(),
+        isFalse,
+      );
+
+      await c.dismiss();
+      await c.removeSource(src());
+      expect(c.config.included, isEmpty);
+      expect(c.exclusions, isEmpty);
+    });
+
+    test('pendentes vencem a inclusão', () async {
+      await c.setKindIncluded(src(), 'node_modules', true);
+      await c.start();
+      await c.dismiss();
+      final rel = 'projetos/app/node_modules/dep/index.js';
+      File(p.join(f.home, rel)).setLastModifiedSync(DateTime(2025));
+      File(p.join(f.hd, 'backup', rel))
+        ..writeAsStringSync('editado no disco')
+        ..setLastModifiedSync(DateTime(2026, 6));
+
+      await c.start();
+
+      expect([for (final i in c.pending) i.key], [rel]);
+      expect(
+        File(p.join(f.hd, 'backup', rel)).readAsStringSync(),
+        'editado no disco',
+      );
+    });
+
+    test('mostra o que entra por outra seção', () async {
+      expect(c.protectedIn(src()), isEmpty);
+      expect(
+        c.protectedIn(f.home),
+        contains((p.join(f.home, '.ssh'), 'Chaves e configurações')),
+      );
     });
   });
 
