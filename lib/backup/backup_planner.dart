@@ -134,13 +134,15 @@ List<String> backupRsyncArgs({
   required String destination,
   bool mirror = false,
   bool dryRun = false,
+  bool update = false,
 }) => [
   '-aH',
   if (dryRun) '-n' else ...['--info=progress2', '--no-inc-recursive'],
   '--stats',
   if (mirror) '--delete',
+  if (update) '--update',
   '--from0',
-  '--exclude-from=$filterFile',
+  '--filter=. $filterFile',
   for (final s in sources) p.normalize(s),
   '${p.normalize(destination)}/',
 ];
@@ -229,35 +231,45 @@ class BackupPlanner {
     String source, {
     CancelToken? cancel,
   }) async {
-    final result = await _runner.run('find', [
-      source,
-      '-mindepth',
-      '1',
-      '-type',
-      'd',
-      ..._nameGroup(kBackupAlwaysExcluded),
-      '-prune',
-      '-print0',
-      '-o',
-      '-type',
-      'd',
-      '-name',
-      '.git',
-      '-prune',
-      '-o',
-      '-type',
-      'd',
-      ..._nameGroup(kBackupBuildDirs),
-      '-prune',
-      '-print0',
-    ], cancel: cancel);
     final always = <String>[];
-    final builds = <String>[];
-    for (final dir in result.stdoutText.split('\x00')) {
-      if (dir.isEmpty) continue;
-      (isBuildKind(p.basename(dir)) ? builds : always).add(dir);
+    final ignored = <String>[];
+    var roots = [source];
+    while (roots.isNotEmpty) {
+      final result = await _runner.run('find', [
+        ...roots,
+        '-mindepth',
+        '1',
+        '-type',
+        'd',
+        ..._nameGroup(kBackupAlwaysExcluded),
+        '-prune',
+        '-print0',
+        '-o',
+        '-type',
+        'd',
+        '-name',
+        '.git',
+        '-prune',
+        '-o',
+        '-type',
+        'd',
+        ..._nameGroup(kBackupBuildDirs),
+        '-prune',
+        '-print0',
+      ], cancel: cancel);
+      final builds = <String>[];
+      for (final dir in result.stdoutText.split('\x00')) {
+        if (dir.isEmpty) continue;
+        (isBuildKind(p.basename(dir)) ? builds : always).add(dir);
+      }
+      final found = (await _gitFilter(builds, cancel)).toSet();
+      ignored.addAll(found);
+      roots = [
+        for (final b in builds)
+          if (!found.contains(b)) b,
+      ];
     }
-    final dirs = [...always, ...await _gitFilter(builds, cancel)]..sort();
+    final dirs = [...always, ...ignored]..sort();
     final sizes = await _du.sizesOf(dirs, cancel: cancel);
     return [
       for (final d in dirs)
@@ -269,24 +281,37 @@ class BackupPlanner {
     List<String> sources, {
     CancelToken? cancel,
   }) async {
-    if (sources.isEmpty) return [];
-    final result = await _runner.run('find', [
-      ...sources,
-      '-type',
-      'd',
-      ..._nameGroup([...kBackupAlwaysExcluded, '.git']),
-      '-prune',
-      '-o',
-      '-type',
-      'd',
-      ..._nameGroup(kBackupBuildDirs),
-      '-prune',
-      '-print0',
-    ], cancel: cancel);
-    return _gitFilter([
-      for (final dir in result.stdoutText.split('\x00'))
-        if (dir.isNotEmpty) dir,
-    ], cancel);
+    final ignored = <String>[];
+    var roots = sources;
+    var nested = false;
+    while (roots.isNotEmpty) {
+      final result = await _runner.run('find', [
+        ...roots,
+        if (nested) ...['-mindepth', '1'],
+        '-type',
+        'd',
+        ..._nameGroup([...kBackupAlwaysExcluded, '.git']),
+        '-prune',
+        '-o',
+        '-type',
+        'd',
+        ..._nameGroup(kBackupBuildDirs),
+        '-prune',
+        '-print0',
+      ], cancel: cancel);
+      final builds = [
+        for (final dir in result.stdoutText.split('\x00'))
+          if (dir.isNotEmpty) dir,
+      ];
+      final found = (await _gitFilter(builds, cancel)).toSet();
+      ignored.addAll(found);
+      roots = [
+        for (final b in builds)
+          if (!found.contains(b)) b,
+      ];
+      nested = true;
+    }
+    return ignored..sort();
   }
 
   Future<List<String>> _gitFilter(

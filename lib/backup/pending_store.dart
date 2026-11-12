@@ -101,7 +101,20 @@ class PendingStore {
     );
   }
 
-  Future<void> save(String targetId, PendingState state) async {
+  static final _queues = <String, Future<void>>{};
+
+  Future<void> save(String targetId, PendingState state) {
+    final previous = _queues[path] ?? Future<void>.value();
+    final next = previous.then((_) => _save(targetId, state));
+    final settled = next.then<void>((_) {}, onError: (Object _) {});
+    _queues[path] = settled;
+    settled.then((_) {
+      if (identical(_queues[path], settled)) _queues.remove(path);
+    });
+    return next;
+  }
+
+  Future<void> _save(String targetId, PendingState state) async {
     final all = await _readAll();
     all[targetId] = {
       'items': [for (final i in state.items) i.toJson()],

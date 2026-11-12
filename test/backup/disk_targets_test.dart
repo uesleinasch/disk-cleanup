@@ -20,7 +20,7 @@ const _findmnt = [
   '-b',
   '--list',
   '-o',
-  'TARGET,SOURCE,FSTYPE,UUID,LABEL,AVAIL',
+  'TARGET,SOURCE,FSTYPE,UUID,LABEL,AVAIL,FSROOT',
 ];
 
 RunResult _json(Object value) =>
@@ -33,6 +33,7 @@ Map<String, Object?> _fs(
   String? uuid,
   String? label,
   int avail = 1000,
+  String fsroot = '/',
 }) => {
   'target': target,
   'source': source,
@@ -40,6 +41,7 @@ Map<String, Object?> _fs(
   'uuid': uuid,
   'label': label,
   'avail': avail,
+  'fsroot': fsroot,
 };
 
 void main() {
@@ -144,11 +146,18 @@ void main() {
           id: 'u-1',
           label: 'Disco externo',
           relPath: 'copias',
+          fsRoot: '/',
+          mountPoint: '/media/user/Disco externo',
         ),
       );
       expect(
         await targets.targetFor('/media/user/Disco externo'),
-        const BackupTarget(id: 'u-1', label: 'Disco externo'),
+        const BackupTarget(
+          id: 'u-1',
+          label: 'Disco externo',
+          fsRoot: '/',
+          mountPoint: '/media/user/Disco externo',
+        ),
       );
     });
 
@@ -169,6 +178,8 @@ void main() {
           id: 'servidor:/export',
           label: 'nas',
           relPath: 'backups',
+          fsRoot: '/',
+          mountPoint: '/mnt/nas',
         ),
       );
     });
@@ -204,6 +215,98 @@ void main() {
         await targets.resolve(const BackupTarget(id: 'sumiu', label: 'X')),
         isNull,
       );
+    });
+
+    group('subvolumes btrfs com o mesmo UUID', () {
+      FakeProcessRunner btrfs() => FakeProcessRunner()
+        ..when(
+          'findmnt',
+          _findmnt,
+          _json({
+            'filesystems': [
+              _fs(
+                '/',
+                '/dev/sda2[/@]',
+                fstype: 'btrfs',
+                uuid: 'b-1',
+                fsroot: '/@',
+              ),
+              _fs(
+                '/home',
+                '/dev/sda2[/@home]',
+                fstype: 'btrfs',
+                uuid: 'b-1',
+                fsroot: '/@home',
+              ),
+              _fs('/mnt/topo', '/dev/sda2', fstype: 'btrfs', uuid: 'b-1'),
+            ],
+          }),
+        );
+
+      test('resolve usa o subvolume guardado, não o primeiro', () async {
+        final targets = DiskTargets(btrfs());
+        expect(
+          await targets.resolve(
+            const BackupTarget(
+              id: 'b-1',
+              label: 'X',
+              relPath: 'ana/copias',
+              fsRoot: '/@home',
+              mountPoint: '/home',
+            ),
+          ),
+          '/home/ana/copias',
+        );
+        expect(
+          await targets.resolve(
+            const BackupTarget(
+              id: 'b-1',
+              label: 'X',
+              relPath: 'copias',
+              fsRoot: '/@dados',
+            ),
+          ),
+          '/mnt/topo/@dados/copias',
+        );
+      });
+
+      test('alvo antigo sem subvolume prefere onde o caminho existe', () async {
+        final tmp = Directory.systemTemp.createTempSync('disk_targets_');
+        addTearDown(() => tmp.deleteSync(recursive: true));
+        Directory('${tmp.path}/home/copias').createSync(recursive: true);
+        final fake = FakeProcessRunner()
+          ..when(
+            'findmnt',
+            _findmnt,
+            _json({
+              'filesystems': [
+                _fs('${tmp.path}/raiz', '/dev/sda2[/@]', uuid: 'b-1'),
+                _fs('${tmp.path}/home', '/dev/sda2[/@home]', uuid: 'b-1'),
+              ],
+            }),
+          );
+        expect(
+          await DiskTargets(fake).resolve(
+            const BackupTarget(id: 'b-1', label: 'X', relPath: 'copias'),
+          ),
+          '${tmp.path}/home/copias',
+        );
+      });
+
+      test('alvo guardado com fsRoot round-trip pelo JSON', () {
+        const t = BackupTarget(
+          id: 'b-1',
+          label: 'X',
+          relPath: 'r',
+          fsRoot: '/@home',
+          mountPoint: '/home',
+        );
+        expect(BackupTarget.fromJson(t.toJson()), t);
+        expect(
+          BackupTarget.fromJson({'id': 'b-1', 'label': 'X'}).fsRoot,
+          isNull,
+        );
+      });
     });
 
     test('mountOf lê o findmnt real', () async {

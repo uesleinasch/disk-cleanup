@@ -96,16 +96,31 @@ class AutoSyncScheduler extends ChangeNotifier {
         return;
       }
       await _run(trigger, now);
+    } on Object catch (e, stack) {
+      debugPrint('Backup automático: $e\n$stack');
+      if (last case final run? when run.running) {
+        last = AutoSyncRun(
+          trigger: run.trigger,
+          startedAt: run.startedAt,
+          outcome: BackupStepStatus.failed,
+          disk: run.disk,
+        );
+        notifyListeners();
+      }
     } finally {
       _checking = false;
     }
   }
 
   Future<void> _run(AutoSyncTrigger trigger, DateTime now) async {
-    if (backup.phase != BackupPhase.idle || backup.busyElsewhere) return;
+    if (backup.busyElsewhere || backup.resolving) return;
+    if (backup.phase == BackupPhase.finished && backup.runIsAuto) {
+      await backup.dismiss();
+    }
+    if (backup.phase != BackupPhase.idle) return;
+    _lastAttempt = now;
     await backup.refresh();
     if (!backup.canRun) return;
-    _lastAttempt = now;
     final disk = backup.config.target?.label;
     last = AutoSyncRun(trigger: trigger, startedAt: now, disk: disk);
     notifyListeners();

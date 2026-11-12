@@ -123,6 +123,7 @@ class MountInfo {
     this.uuid,
     this.label,
     this.available = 0,
+    this.fsRoot,
   });
 
   final String target;
@@ -131,6 +132,7 @@ class MountInfo {
   final String? uuid;
   final String? label;
   final int available;
+  final String? fsRoot;
 
   String get id => uuid ?? source;
 }
@@ -148,11 +150,13 @@ List<MountInfo> parseFindmnt(String json) {
           uuid: _text(fs['uuid']),
           label: _text(fs['label']),
           available: _int(fs['avail']) ?? 0,
+          fsRoot: _text(fs['fsroot']),
         ),
   ];
 }
 
 const _findmntColumns = 'TARGET,SOURCE,FSTYPE,UUID,LABEL,AVAIL';
+const _findmntRootColumns = '$_findmntColumns,FSROOT';
 
 class DiskTargets {
   DiskTargets(this._runner);
@@ -171,13 +175,15 @@ class DiskTargets {
     return parseLsblk(r.stdoutText);
   }
 
-  Future<MountInfo?> mountOf(String path) async {
+  Future<MountInfo?> mountOf(String path) => _mountOf(path, _findmntColumns);
+
+  Future<MountInfo?> _mountOf(String path, String columns) async {
     final r = await _runner.run('findmnt', [
       '-J',
       '-b',
       '--list',
       '-o',
-      _findmntColumns,
+      columns,
       '-T',
       path,
     ]);
@@ -186,13 +192,15 @@ class DiskTargets {
   }
 
   Future<BackupTarget?> targetFor(String dir) async {
-    final mount = await mountOf(dir);
+    final mount = await _mountOf(dir, _findmntRootColumns);
     if (mount == null) return null;
     final rel = p.relative(p.normalize(dir), from: mount.target);
     return BackupTarget(
       id: mount.id,
       label: mount.label ?? p.basename(mount.target),
       relPath: rel == '.' ? '' : rel,
+      fsRoot: mount.fsRoot ?? '/',
+      mountPoint: mount.target,
     );
   }
 
@@ -202,17 +210,41 @@ class DiskTargets {
       '-b',
       '--list',
       '-o',
-      _findmntColumns,
+      _findmntRootColumns,
     ]);
     if (r.exitCode != 0) return null;
-    for (final m in parseFindmnt(r.stdoutText)) {
-      if (m.id == target.id) {
-        return target.relPath.isEmpty
-            ? m.target
-            : p.join(m.target, target.relPath);
+    final mounts = [
+      for (final m in parseFindmnt(r.stdoutText))
+        if (m.id == target.id) m,
+    ];
+    String withRel(String base) =>
+        target.relPath.isEmpty ? base : p.join(base, target.relPath);
+    final root = target.fsRoot;
+    if (root == null) {
+      final bases = [for (final m in mounts) m.target];
+      final existing = bases.where((b) => Directory(withRel(b)).existsSync());
+      final base = existing.firstOrNull ?? bases.firstOrNull;
+      return base == null ? null : withRel(base);
+    }
+    String? best;
+    var bestDepth = -1;
+    var bestSameMount = false;
+    for (final m in mounts) {
+      final mountRoot = m.fsRoot ?? '/';
+      if (mountRoot != root && !p.isWithin(mountRoot, root)) continue;
+      final base = mountRoot == root
+          ? m.target
+          : p.join(m.target, p.relative(root, from: mountRoot));
+      final depth = p.split(mountRoot).length;
+      final sameMount = m.target == target.mountPoint;
+      if (depth > bestDepth ||
+          (depth == bestDepth && sameMount && !bestSameMount)) {
+        best = base;
+        bestDepth = depth;
+        bestSameMount = sameMount;
       }
     }
-    return null;
+    return best == null ? null : withRel(best);
   }
 
   Future<bool> isWritable(String dir) async {

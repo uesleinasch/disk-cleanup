@@ -59,8 +59,10 @@ class FakeProcessRunner implements ProcessRunner {
     String executable,
     List<String> args, {
     CancelToken? cancel,
+    Map<String, String>? environment,
   }) async {
     calls.add([executable, ...args]);
+    environments.add(environment);
     final r = _responses[_key(executable, args)];
     if (r == null) throw _unexpected(executable, args);
     return r;

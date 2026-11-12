@@ -88,7 +88,6 @@ class _LargeFilesPageState extends State<LargeFilesPage> {
   FileFilter _filter = FileFilter.all;
   String _query = '';
   final _selected = <String>{};
-  final _hidden = <String>{};
   final _search = FocusNode();
 
   @override
@@ -99,31 +98,28 @@ class _LargeFilesPageState extends State<LargeFilesPage> {
 
   Future<void> _remove(List<LargeFile> files, {bool permanent = false}) async {
     if (files.isEmpty) return;
-    final paths = files.map((f) => f.path).toSet();
     final result = await widget.flow.run(
       context,
       [for (final f in files) largeFileItem(f)],
       offerPermanent: true,
       initialPermanent: permanent,
-      onUndone: () => setState(() => _hidden.removeAll(paths)),
     );
-    if (result == null || result.cancelled) return;
+    if (result == null || result.cancelled || !mounted) return;
     final done = result.doneIds.map((id) => id.substring(5)).toSet();
-    setState(() {
-      _hidden.addAll(done);
-      _selected.removeAll(done);
-    });
+    setState(() => _selected.removeAll(done));
   }
 
   @override
   Widget build(BuildContext context) {
+    final flow = widget.flow;
     return ListenableBuilder(
-      listenable: widget.scan,
+      listenable: Listenable.merge([widget.scan, flow]),
       builder: (context, _) {
         final now = widget.scan.services.now();
+        final removed = flow.removedFiles;
         final all = [
           for (final f in widget.scan.state.largeFiles)
-            if (!_hidden.contains(f.path)) f,
+            if (!removed.contains(f.path)) f,
         ];
         final visible = [
           for (final f in all)
@@ -312,7 +308,7 @@ class _LargeFilesPageState extends State<LargeFilesPage> {
                 ),
                 CleanupSummaryBar(
                   count: selected.length,
-                  bytes: bytes,
+                  size: formatBytes(bytes),
                   risk: RiskLevel.safe,
                   labelOverride: 'Mover para a lixeira',
                   extraActions: [
@@ -326,7 +322,7 @@ class _LargeFilesPageState extends State<LargeFilesPage> {
                       label: const Text('Abrir local'),
                     ),
                   ],
-                  onClean: () => _remove(selected),
+                  onClean: flow.canClean ? () => _remove(selected) : null,
                 ),
               ],
             ),

@@ -83,6 +83,8 @@ enum PendingAction {
   keepOnDisk,
 }
 
+const _replacementChar = '\u{FFFD}';
+
 String _stamp(DateTime d) {
   String two(int n) => n.toString().padLeft(2, '0');
   return '${d.year}-${two(d.month)}-${two(d.day)}-'
@@ -156,9 +158,8 @@ class BackupController extends ChangeNotifier {
   String? get backupDir =>
       destination == null ? null : p.join(destination!, config.folderName);
 
-  String? get readmePath => _runBackupDir == null
-      ? null
-      : p.join(_runBackupDir!, kRestoreReadmeName);
+  String? get readmePath =>
+      _runBackupDir == null ? null : p.join(_runBackupDir!, kRestoreReadmeName);
 
   String? get runBackupDir => _runBackupDir;
 
@@ -470,7 +471,21 @@ class BackupController extends ChangeNotifier {
   bool get busyElsewhere => _b.lock.heldByOther(this);
 
   bool get canRun =>
-      problems.isEmpty && phase == BackupPhase.idle && !busyElsewhere;
+      problems.isEmpty &&
+      phase == BackupPhase.idle &&
+      !resolving &&
+      !busyElsewhere;
+
+  Future<Directory> _createTmp() =>
+      Directory.systemTemp.createTemp('disk-cleanup-');
+
+  Future<void> _deleteTmp(Directory? tmp) async {
+    try {
+      await tmp?.delete(recursive: true);
+    } on FileSystemException {
+      return;
+    }
+  }
 
   Future<(BackupFilter, String)> _plan(
     Directory tmp,
@@ -502,8 +517,9 @@ class BackupController extends ChangeNotifier {
     estimateError = null;
     final cancel = _cancel = CancelToken();
     notifyListeners();
-    final tmp = await Directory.systemTemp.createTemp('disk-cleanup-');
+    Directory? tmp;
     try {
+      tmp = await _createTmp();
       final (filter, rules) = await _plan(tmp, cancel);
       estimate = await _estimate(rules, cancel);
       ignoredBuilds = filter.keptBuilds.length;
@@ -511,8 +527,10 @@ class BackupController extends ChangeNotifier {
       estimateError = e.message;
     } on ScanCancelled {
       estimate = null;
+    } on FileSystemException catch (e) {
+      estimateError = '${e.message}: ${e.path}';
     } finally {
-      await tmp.delete(recursive: true);
+      await _deleteTmp(tmp);
       _cancel = null;
       _b.lock.release(this);
       phase = BackupPhase.idle;
@@ -535,7 +553,18 @@ class BackupController extends ChangeNotifier {
   bool runIsAuto = false;
 
   Future<void> start({bool auto = false}) async {
-    if (!canRun) return;
+    if (!canRun || !_b.lock.acquire(this)) return;
+    try {
+      _setUpRun(auto);
+    } on Object {
+      _b.lock.release(this);
+      rethrow;
+    }
+    phase = BackupPhase.running;
+    await _execute(List.generate(steps.length, (i) => i));
+  }
+
+  void _setUpRun(bool auto) {
     final chosen = selectedBrowserIds;
     runIsAuto = auto;
     _runSecretItems = config.secretsEnabled ? selectedSecrets : const [];
@@ -557,14 +586,13 @@ class BackupController extends ChangeNotifier {
           ),
       const BackupStep(BackupStepKind.guide, 'Guia de restauração'),
     ];
-    phase = BackupPhase.running;
-    await _execute(List.generate(steps.length, (i) => i));
   }
 
   Future<void> retry(int index) async {
     if (phase != BackupPhase.finished ||
+        resolving ||
         !steps[index].retryable ||
-        busyElsewhere) {
+        !_b.lock.acquire(this)) {
       return;
     }
     phase = BackupPhase.running;
@@ -580,11 +608,11 @@ class BackupController extends ChangeNotifier {
   }
 
   Future<void> _execute(List<int> order) async {
-    _b.lock.acquire(this);
     final cancel = _cancel = CancelToken();
-    final tmp = await Directory.systemTemp.createTemp('disk-cleanup-');
     final pending = [...order];
+    Directory? tmp;
     try {
+      tmp = await _createTmp();
       while (pending.isNotEmpty) {
         final i = pending.removeAt(0);
         currentStep = i;
@@ -604,11 +632,21 @@ class BackupController extends ChangeNotifier {
         }
       }
     } on ScanCancelled {
-      for (final i in [currentStep!, ...pending]) {
+      for (final i in [?currentStep, ...pending]) {
         _set(i, steps[i].copyWith(status: BackupStepStatus.cancelled));
       }
+    } on FileSystemException catch (e) {
+      for (final i in [?currentStep, ...pending]) {
+        _set(
+          i,
+          steps[i].copyWith(
+            status: BackupStepStatus.failed,
+            message: '${e.message}: ${e.path}',
+          ),
+        );
+      }
     } finally {
-      await tmp.delete(recursive: true);
+      await _deleteTmp(tmp);
       _b.lock.release(this);
       _cancel = null;
       currentStep = null;
@@ -637,6 +675,13 @@ class BackupController extends ChangeNotifier {
       return step.copyWith(
         status: BackupStepStatus.failed,
         message: '${e.message}: ${e.path}',
+      );
+    } on ScanCancelled {
+      rethrow;
+    } on Object catch (e) {
+      return step.copyWith(
+        status: BackupStepStatus.failed,
+        message: 'Erro inesperado: $e',
       );
     }
   }
@@ -745,13 +790,28 @@ class BackupController extends ChangeNotifier {
   bool _keptOnDisk(String key) =>
       keepOnDisk.any((k) => k == key || p.isWithin(k, key));
 
-  Future<String> _holdConflicts(
+  Set<String> _undecodable(List<String> lines) {
+    final names = {for (final s in config.sources) p.basename(s)};
+    final out = <String>{};
+    for (final line in lines) {
+      if (!line.contains(_replacementChar)) continue;
+      final path = line.startsWith('*deleting')
+          ? line.replaceFirst(RegExp(r'^\*deleting +'), '')
+          : (line.length > 12 ? line.substring(12) : '');
+      final name = path.split('/').first;
+      if (!names.contains(name)) return names;
+      out.add(name);
+    }
+    return out;
+  }
+
+  Future<(String, Set<String>)> _holdConflicts(
     String rules,
     Directory tmp,
     CancelToken cancel,
   ) async {
     final dir = _runBackupDir!;
-    if (!Directory(dir).existsSync()) return rules;
+    if (!Directory(dir).existsSync()) return (rules, const <String>{});
     final args = backupRsyncArgs(
       filterFile: rules,
       sources: config.sources,
@@ -779,8 +839,12 @@ class BackupController extends ChangeNotifier {
             'Não foi possível comparar com o backup.',
       );
     }
+    final undecodable = _undecodable(lines);
     final found = await classifySyncChanges(
-      entries: parseItemize(lines),
+      entries: [
+        for (final e in parseItemize(lines))
+          if (!e.path.contains(_replacementChar)) e,
+      ],
       sources: config.sources,
       backupDir: dir,
     );
@@ -796,9 +860,13 @@ class BackupController extends ChangeNotifier {
     notifyListeners();
     final holds = [
       for (final i in found) i.rule,
-      for (final k in keepOnDisk) '- /${rsyncLiteral(k)}',
+      for (final k in keepOnDisk) ...[
+        'P /${rsyncLiteral(k)}',
+        'P /${rsyncEscape(k)}/***',
+      ],
+      for (final name in undecodable) 'P /${rsyncEscape(name)}/***',
     ];
-    if (holds.isEmpty) return rules;
+    if (holds.isEmpty) return (rules, undecodable);
     final out = File(p.join(tmp.path, 'regras-sync'));
     final base = await File(rules).readAsBytes();
     // Pendentes antes do filtro: um "+" de pasta incluída não pode furá-los.
@@ -806,7 +874,7 @@ class BackupController extends ChangeNotifier {
       ...utf8.encode(holds.join('\x00')),
       if (base.isNotEmpty) ...[0, ...base],
     ]);
-    return out.path;
+    return (out.path, undecodable);
   }
 
   Future<BackupStep> _folders(
@@ -814,12 +882,17 @@ class BackupController extends ChangeNotifier {
     Directory tmp,
     CancelToken cancel,
   ) async {
-    final rules = await _holdConflicts(await _rules(tmp, cancel), tmp, cancel);
+    final (rules, undecodable) = await _holdConflicts(
+      await _rules(tmp, cancel),
+      tmp,
+      cancel,
+    );
     final r = await _b.rsync.copy(
       filterFile: rules,
       sources: config.sources,
       destination: _runBackupDir!,
       mirror: config.mirror,
+      update: undecodable.isNotEmpty,
       onProgress: _onProgress,
       cancel: cancel,
     );
@@ -828,7 +901,23 @@ class BackupController extends ChangeNotifier {
         (s) => s.copyWith(backup: s.backup.copyWith(lastBackupAt: _runDate)),
       );
     }
-    final result = _fromRsync(step, r);
+    var result = _fromRsync(step, r);
+    if (undecodable.isNotEmpty && result.status != BackupStepStatus.failed) {
+      final notes = [
+        for (final name in undecodable)
+          config.mirror
+              ? 'Há nomes de arquivo com codificação inválida em $name; '
+                    'o espelhamento foi pulado nesta pasta e o que está '
+                    'mais novo no disco foi mantido.'
+              : 'Há nomes de arquivo com codificação inválida em $name; '
+                    'o que está mais novo no disco foi mantido.',
+      ];
+      result = result.copyWith(
+        status: BackupStepStatus.warnings,
+        message: result.status == BackupStepStatus.done ? notes.first : null,
+        warnings: [...notes, ...result.warnings],
+      );
+    }
     if (pending.isEmpty || result.status != BackupStepStatus.done) {
       return result;
     }
@@ -850,17 +939,18 @@ class BackupController extends ChangeNotifier {
     if (dir == null || id == null) {
       return 'Conecte o disco do backup para resolver os pendentes.';
     }
-    if (phase != BackupPhase.idle || !_b.lock.acquire(this)) {
+    if (phase != BackupPhase.idle || resolving || !_b.lock.acquire(this)) {
       return 'Espere o backup ou a restauração terminar.';
     }
     resolving = true;
     notifyListeners();
     final now = _now();
-    final tmp = await Directory.systemTemp.createTemp('disk-cleanup-');
     final done = <String>{};
     final errors = <String>[];
     final kept = {...keepOnDisk};
+    Directory? tmp;
     try {
+      tmp = await _createTmp();
       final byKey = {for (final i in pending) i.key: i};
       final groups = <(PendingAction, String), List<PendingItem>>{};
       for (final MapEntry(:key, :value) in decisions.entries) {
@@ -943,7 +1033,7 @@ class BackupController extends ChangeNotifier {
     } on FileSystemException catch (e) {
       errors.add('${e.message}: ${e.path}');
     } finally {
-      await tmp.delete(recursive: true);
+      await _deleteTmp(tmp);
       _b.lock.release(this);
       resolving = false;
       notifyListeners();
@@ -1087,7 +1177,11 @@ class BackupController extends ChangeNotifier {
 
   BackupStepStatus get outcome {
     final s = steps.map((s) => s.status).toSet();
-    if (s.contains(BackupStepStatus.failed)) return BackupStepStatus.failed;
+    if (s.contains(BackupStepStatus.failed) ||
+        s.contains(BackupStepStatus.running) ||
+        s.contains(BackupStepStatus.pending)) {
+      return BackupStepStatus.failed;
+    }
     if (s.contains(BackupStepStatus.cancelled)) {
       return BackupStepStatus.cancelled;
     }

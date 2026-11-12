@@ -180,7 +180,7 @@ class BrowserProfiles {
         '--stats',
         if (mirror) '--delete',
         '--from0',
-        '--exclude-from=$filterFile',
+        '--filter=. $filterFile',
         '${p.normalize(install.path)}/',
         '$dest/',
       ],

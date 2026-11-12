@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:disk_cleanup/backup/backup_manifest.dart';
@@ -54,6 +55,51 @@ void main() {
     );
     expect([for (final b in read.browsers) b.id], ['chrome']);
     expect(read.browsers.single.profilePath, startsWith('/home/ana/'));
+  });
+
+  test('descarta pastas e navegadores com nome que foge do backup', () async {
+    File(p.join(tmp.path, kManifestName)).writeAsStringSync(
+      jsonEncode({
+        'folderName': 'backup',
+        'sources': [
+          {'path': '/home/ana/projetos', 'name': 'projetos'},
+          {'path': '/home/ana/x', 'name': '../../fora'},
+          {'path': '/home/ana/y', 'name': '..'},
+          {'path': '/home/ana/z', 'name': '.'},
+          {'path': '/home/ana/w', 'name': ''},
+          {'path': '/home/ana/v', 'name': 'a\x00b'},
+        ],
+        'browsers': [
+          {'id': 'brave', 'label': 'Brave', 'profilePath': '/home/ana/b'},
+          {'id': '../../etc', 'label': 'Mau', 'profilePath': '/home/ana/c'},
+          {'id': 'outro', 'label': 'Outro', 'profilePath': '/home/ana/d'},
+          {'id': 'chrome', 'label': '../x', 'profilePath': '/home/ana/e'},
+        ],
+      }),
+    );
+
+    final read = (await BackupManifest.load(tmp.path))!;
+    expect(read.fromManifest, isTrue);
+    expect([for (final s in read.sources) s.name], ['projetos']);
+    expect([for (final b in read.browsers) b.id], ['brave']);
+  });
+
+  test('manifesto com tipo errado cai no modo sem manifesto', () async {
+    Directory(p.join(tmp.path, 'projetos')).createSync();
+    File(p.join(tmp.path, kManifestName))
+        .writeAsStringSync(jsonEncode({'folderName': 7, 'sources': 'texto'}));
+
+    final read = (await BackupManifest.load(tmp.path))!;
+    expect(read.fromManifest, isFalse);
+    expect([for (final s in read.sources) s.name], ['projetos']);
+  });
+
+  test('isSafePathSegment', () {
+    expect(isSafePathSegment('projetos'), isTrue);
+    expect(isSafePathSegment('.config'), isTrue);
+    for (final bad in ['', '.', '..', 'a/b', '/abs', 'a\x00b']) {
+      expect(isSafePathSegment(bad), isFalse, reason: bad);
+    }
   });
 
   test('pasta inexistente não tem manifesto', () async {

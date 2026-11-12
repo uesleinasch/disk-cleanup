@@ -130,4 +130,23 @@ void main() {
     expect(await d.delete('${tmp.path}/root/alias/f'), DeleteOutcome.deleted);
     expect(f.existsSync(), isFalse);
   });
+
+  test('canRemove segue as mesmas regras do delete', () async {
+    final f = File('${tmp.path}/home/b.txt')..createSync(recursive: true);
+    expect(await deleter.canRemove(f.path), isTrue);
+    expect(await deleter.canRemove('${tmp.path}/home'), isFalse);
+    expect(await deleter.canRemove('/etc/passwd'), isFalse);
+    expect(await deleter.canRemove('relativo.txt'), isFalse);
+    expect(f.existsSync(), isTrue);
+  });
+
+  test('raiz de sistema mapeada é ignorada quando home é informado', () async {
+    final d = SafeDeleter(
+      home: '${tmp.path}/home',
+      allowedRoots: ['${tmp.path}/home', '/usr', '/'],
+      protectedPaths: [],
+    );
+    expect(await d.canRemove('/usr/share/doc'), isFalse);
+    expect(await d.canRemove('/opt/x'), isFalse);
+  });
 }

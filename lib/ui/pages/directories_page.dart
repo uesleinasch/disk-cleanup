@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:path/path.dart' as p;
 
 import '../../core/format.dart';
+import '../../core/system_paths.dart';
 import '../../scan/scan_controller.dart';
 import '../../settings/settings_controller.dart';
 import '../theme/severity_colors.dart';
@@ -40,6 +41,7 @@ class _DirectoriesPageState extends State<DirectoriesPage> {
           ? s
           : s.copyWith(mappedDirs: [...s.mappedDirs, path]),
     );
+    if (!mounted) return;
     setState(() => _selected = path);
     await widget.scan.measureDir(path);
   }
@@ -156,6 +158,9 @@ class _DirList extends StatelessWidget {
     final result = state.mappedDirs[dir];
     if (state.lockedDirs.contains(dir) || result == null) {
       return const SizedBox.shrink();
+    }
+    if (result.totalUnknown) {
+      return Text('Desconhecido', style: text.titleMedium);
     }
     return Tooltip(
       message: formatBytesExact(result.total),
@@ -381,7 +386,7 @@ class _DirDetail extends StatelessWidget {
                       style: text.titleMedium?.copyWith(fontFamily: kMono),
                     ),
                     Text(
-                      locked || result == null
+                      locked || result == null || result.totalUnknown
                           ? 'Tamanho desconhecido'
                           : formatBytes(result.total),
                       style: text.bodySmall,
@@ -484,6 +489,21 @@ class _AddDirectoryDialogState extends State<_AddDirectoryDialog> {
     path = p.normalize(path);
     if (!p.isAbsolute(path) || !Directory(path).existsSync()) {
       setState(() => _error = 'Esse diretório não existe');
+      return;
+    }
+    final String real;
+    try {
+      real = Directory(path).resolveSymbolicLinksSync();
+    } on FileSystemException {
+      setState(() => _error = 'Esse diretório não existe');
+      return;
+    }
+    if (isForbiddenMappedDir(path, home: home) ||
+        isForbiddenMappedDir(real, home: home)) {
+      setState(
+        () => _error =
+            'Escolha uma pasta dentro do seu home ou de um disco externo.',
+      );
       return;
     }
     Navigator.pop(context, path);

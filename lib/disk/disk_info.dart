@@ -61,7 +61,7 @@ class DiskInfoService {
       'overlay',
       '-x',
       'efivarfs',
-    ]);
+    ], environment: cLocaleEnvironment);
     return parseDf(result.stdoutText);
   }
 }

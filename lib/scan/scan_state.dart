@@ -156,6 +156,7 @@ Map<String, Object?> _duToJson(DuResult r) => {
   'total': r.total,
   'errors': r.errors,
   'permissionDenied': r.permissionDenied,
+  'totalUnknown': r.totalUnknown,
 };
 
 DuResult _duFromJson(Map<String, Object?> j) => DuResult(
@@ -166,6 +167,7 @@ DuResult _duFromJson(Map<String, Object?> j) => DuResult(
   total: j['total'] as int,
   errors: j['errors'] as int,
   permissionDenied: j['permissionDenied'] as bool,
+  totalUnknown: j['totalUnknown'] as bool? ?? false,
 );
 
 Map<String, Object?> _largeFileToJson(LargeFile f) => {

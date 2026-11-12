@@ -40,11 +40,11 @@ Antes de copiar as pastas, um dry-run na direção do backup (`backupRsyncArgs` 
 - **Mais novo no disco**: arquivo alterado cujo mtime no disco é maior que o local e o conteúdo difere.
 - **Seria apagado** (só com Espelhar): linhas `*deleting`; o que está dentro de uma pasta que também seria apagada é agrupado na pasta.
 
-Cada caminho vira a regra `- /<pasta>/<rel>` (com `rsyncLiteral`), acrescentada às regras do backup. Sem `--delete-excluded`, isso impede tanto a cópia quanto a remoção. A lista é regravada a cada backup em `$XDG_DATA_HOME/disk-cleanup/pendentes.json`, por disco.
+Cada caminho vira a regra `- /<pasta>/<rel>` (com `rsyncLiteral`), acrescentada às regras do backup. Sem `--delete-excluded`, isso impede tanto a cópia quanto a remoção. As regras vão por `--filter='. <arquivo>'` (com `--from0`), que aceita também `P`. Se o dry-run tiver nome com codificação inválida (U+FFFD), a pasta afetada ganha `P /<pasta>/***` e a cópia usa `--update`. A lista é regravada a cada backup em `$XDG_DATA_HOME/disk-cleanup/pendentes.json`, por disco.
 
 | Tipo | Ações |
 | --- | --- |
 | Mais novo no disco | Enviar o do computador (a versão do disco vai para `<backup>/.substituidos/`), Trazer o do disco (a local vai para `substituidos` no computador), Manter os dois (`nome (do disco AAAA-MM-DD).ext` no computador) |
-| Seria apagado | Apagar do disco (`SafeDeleter` com raiz na pasta do backup), Manter no disco (lembrado em `keepOnDisk` e não volta a perguntar) |
+| Seria apagado | Apagar do disco (`SafeDeleter` com raiz na pasta do backup), Manter no disco (lembrado em `keepOnDisk`, vira a regra de proteção `P /<pasta>/<rel>`: o `--delete` não apaga, mas o arquivo volta a ser enviado se reaparecer no computador) |
 
 A Visão geral mostra um banner quando há pendentes; o menu lateral mostra a contagem.

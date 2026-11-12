@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:disk_cleanup/backup/backup_controller.dart';
+import 'package:disk_cleanup/backup/backup_manifest.dart';
 import 'package:disk_cleanup/backup/restore_controller.dart';
 import 'package:disk_cleanup/backup/restore_planner.dart';
 import 'package:disk_cleanup/backup/secrets_archiver.dart';
@@ -199,5 +201,109 @@ void main() {
     await r.load(dir: p.join(f.tmp.path, 'vazio'));
     expect(r.loadError, contains('Não há backup'));
     expect(r.choices, isEmpty);
+  });
+
+  test('pasta ilegível vira erro e limpa o backup anterior', () async {
+    final locked = Directory(p.join(f.tmp.path, 'trancada'))..createSync();
+    Process.runSync('chmod', ['000', locked.path]);
+    addTearDown(() => Process.runSync('chmod', ['700', locked.path]));
+
+    await r.load(dir: locked.path);
+    expect(r.phase, RestorePhase.idle);
+    expect(r.loadError, contains('Não foi possível ler o backup'));
+    expect(r.backupDir, isNull);
+    expect(r.choices, isEmpty);
+  });
+
+  test('manifesto adulterado não cria escolhas fora do backup', () async {
+    final dir = p.join(f.hd, 'backup');
+    Directory(p.join(f.hd, 'fora')).createSync();
+    File(p.join(dir, kManifestName)).writeAsStringSync(
+      jsonEncode({
+        'folderName': 'backup',
+        'home': f.home,
+        'sources': [
+          {'path': p.join(f.home, 'projetos'), 'name': 'projetos'},
+          {'path': p.join(f.home, 'x'), 'name': '../fora'},
+        ],
+        'browsers': [
+          {'id': '../fora', 'label': 'Mau', 'profilePath': f.home},
+        ],
+      }),
+    );
+    await r.load();
+    expect([for (final c in r.choices) c.id], ['segredos', 'pasta:projetos']);
+
+    r.setDestination(RestoreDestination.separate);
+    r.selectAll();
+    await r.analyze();
+    for (final item in r.items) {
+      expect(p.isWithin(r.separateRoot, item.target!), isTrue);
+    }
+  });
+
+  test('manifesto com tipo errado lê as pastas do disco', () async {
+    File(p.join(f.hd, 'backup', kManifestName))
+        .writeAsStringSync(jsonEncode({'folderName': 1, 'sources': 'x'}));
+    await r.load();
+    expect(r.loadError, isNull);
+    expect(r.choices.map((c) => c.id), contains('pasta:projetos'));
+  });
+
+  test('arquivo local ilegível falha só aquele item na análise', () async {
+    final local = File(p.join(f.home, 'projetos/app/notas.txt'))
+      ..writeAsStringSync('do backuX')
+      ..setLastModifiedSync(DateTime(2026, 11, 9));
+    Process.runSync('chmod', ['000', local.path]);
+    addTearDown(() => Process.runSync('chmod', ['600', local.path]));
+
+    r.toggle('pasta:projetos');
+    await r.analyze();
+    expect(r.phase, RestorePhase.reviewing);
+    expect(r.items.single.status, BackupStepStatus.failed);
+    expect(r.items.single.message, contains('Não foi possível analisar'));
+    expect(f.services.backup.lock.heldByOther(b), isFalse);
+  });
+
+  test('erro inesperado na execução falha o item e o resultado', () async {
+    r.toggle('pasta:projetos');
+    await r.analyze();
+    final target = p.join(f.home, 'projetos');
+    Directory(target).deleteSync(recursive: true);
+    File(target).writeAsStringSync('agora é arquivo');
+
+    await r.start();
+    expect(r.phase, RestorePhase.finished);
+    expect(r.items.single.status, BackupStepStatus.failed);
+    expect(r.items.single.message, contains('A restauração falhou'));
+    expect(r.outcome, BackupStepStatus.failed);
+  });
+
+  test('outcome trata item que ficou rodando ou pendente como falha', () async {
+    r.toggle('pasta:projetos');
+    await r.analyze();
+    r.items.single.status = BackupStepStatus.running;
+    expect(r.outcome, BackupStepStatus.failed);
+    r.items.single.status = BackupStepStatus.pending;
+    expect(r.outcome, BackupStepStatus.failed);
+  });
+
+  test('segredos só restauram o que o catálogo conhece', () async {
+    f.secrets.packed = {
+      '.ssh/id_ed25519': 'chave do backup',
+      '.gitconfig-trabalho': '[user]',
+      '.bashrc': 'malicioso',
+      'Documentos/x.txt': 'fora do catálogo',
+    };
+    r.toggle('segredos');
+    await r.analyze();
+    final a = r.items.single.analysis!;
+    expect(a.created, ['.gitconfig-trabalho']);
+    expect([for (final c in a.conflicts) c.path], ['.ssh/id_ed25519']);
+
+    await r.start();
+    expect(read('.gitconfig-trabalho'), '[user]');
+    expect(File(p.join(f.home, '.bashrc')).existsSync(), isFalse);
+    expect(File(p.join(f.home, 'Documentos/x.txt')).existsSync(), isFalse);
   });
 }

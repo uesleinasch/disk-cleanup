@@ -15,12 +15,14 @@ class DuResult {
     required this.total,
     required this.errors,
     required this.permissionDenied,
+    this.totalUnknown = false,
   });
 
   final List<DirEntrySize> entries;
   final int total;
   final int errors;
   final bool permissionDenied;
+  final bool totalUnknown;
 }
 
 class DuScanner {
@@ -30,14 +32,12 @@ class DuScanner {
 
   Future<DuResult> childrenSizes(String dir, {CancelToken? cancel}) async {
     _throwIfCancelled(cancel);
-    final result = await _runner.run('du', [
-      '-x',
-      '-a',
-      '-d1',
-      '-B1',
-      '-0',
-      dir,
-    ], cancel: cancel);
+    final result = await _runner.run(
+      'du',
+      ['-x', '-a', '-d1', '-B1', '-0', dir],
+      cancel: cancel,
+      environment: cLocaleEnvironment,
+    );
     final self = _normalize(dir);
     final entries = <DirEntrySize>[];
     var total = 0;
@@ -62,6 +62,7 @@ class DuScanner {
       total: total,
       errors: errors,
       permissionDenied: denied,
+      totalUnknown: !foundSelf,
     );
   }
 
@@ -71,12 +72,12 @@ class DuScanner {
   }) async {
     if (paths.isEmpty) return {};
     _throwIfCancelled(cancel);
-    final result = await _runner.run('du', [
-      '-sx',
-      '-B1',
-      '-0',
-      ...paths,
-    ], cancel: cancel);
+    final result = await _runner.run(
+      'du',
+      ['-sx', '-B1', '-0', ...paths],
+      cancel: cancel,
+      environment: cLocaleEnvironment,
+    );
     return {for (final r in _records(result)) _normalize(r.path): r.bytes};
   }
 
