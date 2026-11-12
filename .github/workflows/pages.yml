@@ -2,7 +2,7 @@ name: Pages
 
 on:
   push:
-    branches: [main]
+    branches: [production]
     paths: ['site/**', '.github/workflows/pages.yml']
   release:
     types: [published]
