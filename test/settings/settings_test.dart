@@ -164,6 +164,44 @@ void main() {
       expect(File(path).existsSync(), isFalse);
     });
 
+    test('segunda falha não sobrescreve o .bak anterior', () async {
+      File(path)
+        ..createSync(recursive: true)
+        ..writeAsStringSync('primeiro');
+      await SettingsStore(path).load('/home/u');
+      File(path).writeAsStringSync('segundo');
+      await SettingsStore(path).load('/home/u');
+      expect(File('$path.bak').readAsStringSync(), 'primeiro');
+      final baks = Directory(File(path).parent.path)
+          .listSync()
+          .map((e) => e.path)
+          .where((p) => p.endsWith('.bak'))
+          .toList();
+      expect(baks, hasLength(2));
+      final other = baks.firstWhere((p) => p != '$path.bak');
+      expect(File(other).readAsStringSync(), 'segundo');
+    });
+
+    test('campo inválido volta ao padrão e mantém os outros', () async {
+      File(path)
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          '{"warnPercent": "dez", "critPercent": 7, '
+          '"bannerSnoozedUntil": "ontem", "window": {"x": "a"}, '
+          '"buildRules": [1], "mappedDirs": ["/home/u", "/dados"], '
+          '"themeMode": "dark"}',
+        );
+      final s = await SettingsStore(path).load('/home/u');
+      expect(s.warnPercent, 15);
+      expect(s.critPercent, 7);
+      expect(s.bannerSnoozedUntil, isNull);
+      expect(s.window, isNull);
+      expect(s.buildRules, kDefaultBuildRules);
+      expect(s.mappedDirs, ['/home/u', '/dados']);
+      expect(s.themeMode, ThemeMode.dark);
+      expect(File('$path.bak').existsSync(), isFalse);
+    });
+
     test('save seguido de load devolve o mesmo valor', () async {
       final store = SettingsStore(path);
       final s = Settings.defaults('/home/u').copyWith(

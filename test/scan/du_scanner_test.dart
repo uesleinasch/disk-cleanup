@@ -53,6 +53,30 @@ void main() {
     },
   );
 
+  test('du roda em locale C para o stderr ser comparável', () async {
+    final fake = FakeProcessRunner()
+      ..when('du', childArgs, _out(0, '3000\t/h\x00'))
+      ..when('du', ['-sx', '-B1', '-0', '/a'], _out(0, '5\t/a\x00'));
+    await DuScanner(fake).childrenSizes('/h');
+    await DuScanner(fake).sizesOf(['/a']);
+    expect(fake.environments, [
+      {'LC_ALL': 'C'},
+      {'LC_ALL': 'C'},
+    ]);
+  });
+
+  test('sem registro do próprio dir o total fica desconhecido', () async {
+    final fake = FakeProcessRunner()
+      ..when(
+        'du',
+        childArgs,
+        _out(1, '', "du: cannot access '/h': No such file or directory\n"),
+      );
+    final r = await DuScanner(fake).childrenSizes('/h');
+    expect(r.totalUnknown, isTrue);
+    expect(r.permissionDenied, isFalse);
+  });
+
   test(
     'sem registro do próprio dir e Permission denied marca negado',
     () async {

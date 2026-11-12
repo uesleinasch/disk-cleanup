@@ -247,4 +247,32 @@ void main() {
 
     expect(items.map((i) => i.name), ['ok.txt']);
   });
+
+  test('list deixa bytes nulo quando o du não mede a entrada', () async {
+    final s = service();
+    final e = (await s.moveToTrash(mk('a/sem.txt').path))!;
+    final p1 = '$trashDir/files/${e.trashedName}';
+    runner.when('du', ['-sx', '-B1', '-0', p1], const RunResult(1, [], ''));
+    final items = await s.list();
+    expect(items.single.bytes, isNull);
+  });
+
+  test('empty continua quando uma entrada falha e conta a falha', () async {
+    final s = service();
+    await s.moveToTrash(mk('a/um.txt').path);
+    final locked = Directory('$trashDir/files/travada')..createSync();
+    File('${locked.path}/dentro.txt').writeAsStringSync('x');
+    await s.moveToTrash(mk('b/dois.txt').path);
+    Process.runSync('chmod', ['555', locked.path]);
+    addTearDown(() => Process.runSync('chmod', ['755', locked.path]));
+
+    final failed = await s.empty();
+
+    final isRoot =
+        Process.runSync('id', ['-u']).stdout.toString().trim() == '0';
+    if (!isRoot) expect(failed, 1);
+    expect(File('$trashDir/files/um.txt').existsSync(), isFalse);
+    expect(File('$trashDir/files/dois.txt').existsSync(), isFalse);
+    expect(Directory('$trashDir/info').listSync(), isEmpty);
+  });
 }

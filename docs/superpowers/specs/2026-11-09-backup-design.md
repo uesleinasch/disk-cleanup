@@ -137,7 +137,7 @@ O `git check-ignore` consulta o índice: uma pasta com qualquer arquivo rastread
 
 ```
 rsync -aH --info=progress2 --no-inc-recursive --stats [--delete] \
-  --from0 --exclude-from=<regras> <origem 1> <origem 2> … <destino>/<pasta do backup>/
+  --from0 --filter='. <regras>' <origem 1> <origem 2> … <destino>/<pasta do backup>/
 ```
 
 - Roda com `LC_ALL=C` para o formato dos números do progresso e do `--stats` não depender do idioma do sistema.
@@ -169,7 +169,7 @@ Catálogo no código. Vale o primeiro caminho que tenha o arquivo `Local State`:
   - Singleton*  - *.pma
   ```
 
-- Cópia: `rsync -aH --info=progress2 --exclude-from=navegadores.txt [--delete] <perfil>/ <destino>/<pasta do backup>/navegadores/<id>/`.
+- Cópia: `rsync -aH --info=progress2 --filter='. navegadores.txt' [--delete] <perfil>/ <destino>/<pasta do backup>/navegadores/<id>/`.
 - Senhas e cookies dependem do keyring do sistema, por isso `.local/share/keyrings` vem marcado nos segredos e o LEIA-ME manda restaurar o keyring antes de abrir os navegadores. Se o usuário marcar navegadores e desligar os segredos (ou desmarcar o keyring), a tela avisa: "Sem o keyring, os perfis voltam sem as senhas salvas."
 
 ### 6.7 Pacote de segredos (tarefa 7)
@@ -203,8 +203,8 @@ Gerado por uma função pura a partir do relatório do backup (o que foi copiado
 1. **Conteúdo deste disco:** tabela com a pasta do backup (origens e o que não foi copiado), o pacote de segredos (itens incluídos) e a data.
 2. **Variável de partida:** `DESTINO="<caminho atual do destino>"`, com a nota de que o caminho muda em outra máquina.
 3. **Pacotes:** `sudo apt install rsync gnupg git` (o `git-lfs` só se algum `.gitconfig` incluído tiver `filter "lfs"`).
-4. **Segredos** (só se o pacote foi gerado): `cd ~ && gpg -d "$DESTINO/<pasta do backup>/secrets-….tar.gz.gpg" | tar xzf -`, os `chmod` de `.ssh` e `.gnupg` e o comando para conferir o conteúdo (`gpg -d … | tar tzf -`).
-5. **Projetos:** `rsync -aH --info=progress2 "$DESTINO/<pasta>/<origem>" <pai original>/` por origem, mais a lembrança de reinstalar as dependências, citando as pastas que não foram copiadas.
+4. **Segredos** (só se o pacote foi gerado): `cd ~ && gpg -d "$DESTINO/<pasta do backup>/secrets-….tar.gz.gpg" | tar xzf - --skip-old-files` (o que já existe fica como está), os `chmod` de `.ssh` e `.gnupg` e o comando para conferir o conteúdo (`gpg -d … | tar tzf -`).
+5. **Projetos:** `rsync -aH --info=progress2 --backup --backup-dir="$HOME/.local/share/disk-cleanup/substituidos/manual-$(date +%F)" "$DESTINO/<pasta>/<origem>" <pai original>/` por origem, mais a lembrança de reinstalar as dependências, citando as pastas que não foram copiadas.
 6. **Navegadores** (só os copiados): restaurar o keyring antes, fazer logout e login, abrir e fechar o navegador uma vez, fechá-lo e copiar o perfil de volta para o caminho de origem.
 7. **Antes de desconectar o disco:** `sync` e `udisksctl unmount -b <dispositivo>`, com o dispositivo vindo do `lsblk`.
 

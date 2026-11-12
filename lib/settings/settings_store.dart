@@ -22,10 +22,29 @@ class SettingsStore {
       return Settings.fromJson((json as Map).cast<String, Object?>(), home);
     } catch (_) {
       try {
-        await file.rename('$filePath.bak');
+        await file.rename(await _freeBackupPath());
       } catch (_) {}
       return Settings.defaults(home);
     }
+  }
+
+  Future<String> _freeBackupPath() async {
+    Future<bool> free(String path) async =>
+        await FileSystemEntity.type(path, followLinks: false) ==
+        FileSystemEntityType.notFound;
+
+    final plain = '$filePath.bak';
+    if (await free(plain)) return plain;
+    final stamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '')
+        .replaceAll('.', '-');
+    final base = '$filePath.$stamp.bak';
+    var candidate = base;
+    for (var n = 2; !await free(candidate); n++) {
+      candidate = '$base.$n';
+    }
+    return candidate;
   }
 
   static final _queues = <String, Future<void>>{};

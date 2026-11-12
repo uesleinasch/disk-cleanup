@@ -134,6 +134,38 @@ void main() {
       expect(b.phase, BackupPhase.finished);
     });
 
+    test('falha automática some na próxima vez que vence', () async {
+      await b.setAutoSyncHours(1);
+      f.disks.available = 0;
+      await sync.check();
+      expect(sync.last!.outcome, BackupStepStatus.failed);
+
+      f.disks.available = 1000000000000;
+      now = now.add(const Duration(hours: 1));
+      await sync.check();
+      expect(sync.last!.outcome, BackupStepStatus.done);
+      expect(b.phase, BackupPhase.idle);
+      expect(f.settings.value.backup.lastBackupAt, now);
+    });
+
+    test(
+      'sem poder rodar espera o intervalo antes de tentar de novo',
+      () async {
+        await b.setAutoSyncHours(1);
+        await b.removeSource(p.join(f.home, 'projetos'));
+        var notified = 0;
+        b.addListener(() => notified++);
+        await sync.check();
+        expect(notified, greaterThan(0));
+        expect(sync.last, isNull);
+
+        notified = 0;
+        now = now.add(const Duration(minutes: 5));
+        await sync.check();
+        expect(notified, 0);
+      },
+    );
+
     test('evento de montagem verifica depois da espera', () async {
       final runner = FakeProcessRunner()
         ..whenStreaming(

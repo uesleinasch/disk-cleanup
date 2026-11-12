@@ -35,6 +35,22 @@ void main() {
     expect(item.rule, r'- /projetos/a b/\[x].txt');
   });
 
+  test('saves simultâneos no mesmo arquivo não se perdem', () async {
+    final tmp = Directory.systemTemp.createTempSync('pendentes-');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    final path = p.join(tmp.path, 'pendentes.json');
+    await Future.wait([
+      for (var i = 0; i < 10; i++)
+        PendingStore(path)
+            .save('disco-$i', PendingState(keepOnDisk: {'pasta/$i'})),
+    ]);
+    for (var i = 0; i < 10; i++) {
+      expect((await PendingStore(path).load('disco-$i')).keepOnDisk, {
+        'pasta/$i',
+      });
+    }
+  });
+
   group('no backup', () {
     late BackupFixture f;
     late BackupController c;
@@ -162,6 +178,63 @@ void main() {
       expect([for (final i in c.pending) i.key], ['projetos/app/notas.txt']);
       expect(disk('app/rascunho.txt'), 'r');
     });
+
+    test('manter no disco não impede enviar o arquivo que voltou', () async {
+      await c.dismiss();
+      await c.resolvePending({
+        'projetos/app/rascunho.txt': PendingAction.keepOnDisk,
+      });
+      f.file('projetos/app/rascunho.txt', 'de volta');
+      await c.start();
+      expect(disk('app/rascunho.txt'), 'de volta');
+    });
+
+    test(
+      'nome com codificação inválida não é apagado nem sobrescrito',
+      () async {
+        String sh(String script, List<String> args) {
+          final r = Process.runSync('sh', [
+            '-c',
+            script,
+            'sh',
+            ...args,
+          ], workingDirectory: p.join(backup(), 'projetos', 'app'));
+          expect(r.exitCode, 0, reason: '${r.stderr}');
+          return r.stdout as String;
+        }
+
+        const soNoDisco = r'so-no-disco-\351.txt';
+        const velho = r'velho-\351.txt';
+        sh(r'printf disco > "$(printf "$1")"', [soNoDisco]);
+        sh(
+          r'printf disco > "$(printf "$1")"; touch -d 2026-06-01 "$(printf "$1")"',
+          [velho],
+        );
+        final r = Process.runSync('sh', [
+          '-c',
+          r'printf local > "$(printf "$1")"; touch -d 2025-01-01 "$(printf "$1")"',
+          'sh',
+          velho,
+        ], workingDirectory: p.join(f.home, 'projetos', 'app'));
+        expect(r.exitCode, 0, reason: '${r.stderr}');
+
+        await c.dismiss();
+        await c.start();
+
+        expect(sh(r'cat "$(printf "$1")"', [soNoDisco]), 'disco');
+        expect(sh(r'cat "$(printf "$1")"', [velho]), 'disco');
+        expect(disk('app/rascunho.txt'), 'r');
+        final folders = c.steps.firstWhere(
+          (s) => s.kind == BackupStepKind.folders,
+        );
+        expect(folders.status, BackupStepStatus.warnings);
+        expect(
+          folders.warnings.first,
+          contains('codificação inválida em projetos'),
+        );
+        expect(c.pending.any((i) => i.key.contains('\u{FFFD}')), isFalse);
+      },
+    );
 
     test('pendente não resolve com backup em andamento', () async {
       expect(

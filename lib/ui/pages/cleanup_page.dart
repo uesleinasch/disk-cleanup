@@ -61,19 +61,27 @@ class _CleanupPageState extends State<CleanupPage>
       if (tab.categories.contains(i.category) && i.id != 'trash:all') i,
   ];
 
+  String _tabLabel(CleanupTab t, bool scanned) {
+    if (!scanned) return t.label;
+    final size = totalSizeLabel(_itemsOf(t));
+    return size == null ? t.label : '${t.label} ($size)';
+  }
+
   @override
   Widget build(BuildContext context) {
     final scan = widget.scan;
+    final flow = widget.flow;
     return ListenableBuilder(
-      listenable: scan,
+      listenable: Listenable.merge([scan, flow]),
       builder: (context, _) {
+        final scanned = scan.state.updatedAt != null;
         final tab = CleanupTab.values[_tabs.index];
         final items = _itemsOf(tab);
         final selected = [
           for (final i in items)
             if (scan.isSelected(i.id)) i,
         ];
-        final bytes = selected.fold(0, (a, i) => a + i.bytes);
+        final size = totalSizeLabel(selected);
         final allTrash =
             tab == CleanupTab.trash &&
             items.isNotEmpty &&
@@ -123,13 +131,22 @@ class _CleanupPageState extends State<CleanupPage>
                     Tab(
                       icon: Icon(t.icon),
                       iconMargin: EdgeInsets.zero,
-                      text:
-                          '${t.label} (${formatBytes(_itemsOf(t).fold(0, (a, i) => a + i.bytes))})',
+                      text: _tabLabel(t, scanned),
                     ),
                 ],
               ),
               Expanded(
-                child: items.isEmpty
+                child: !scanned && items.isEmpty
+                    ? EmptyState(
+                        icon: Symbols.search_rounded,
+                        title: scan.running
+                            ? 'Varrendo o disco…'
+                            : 'Ainda não varrido',
+                        body: scan.running
+                            ? 'Os itens aparecem aqui quando a varredura terminar.'
+                            : 'Atualize a varredura para ver o que dá para limpar.',
+                      )
+                    : items.isEmpty
                     ? EmptyState(
                         icon: Symbols.check_circle_rounded,
                         iconColor: Theme.of(context)
@@ -160,25 +177,30 @@ class _CleanupPageState extends State<CleanupPage>
                         ],
                       ),
               ),
-              CleanupSummaryBar(
-                count: selected.length,
-                bytes: bytes,
-                risk: highestRisk(selected),
-                labelOverride: allTrash
-                    ? 'Esvaziar lixeira (${formatBytes(bytes)})'
-                    : null,
-                onClearSelection: () {
-                  for (final i in selected) {
-                    scan.toggle(i.id);
-                  }
-                },
-                onClean: () async {
-                  final result = await widget.flow.run(context, toRun);
-                  if (result != null && allTrash && !result.cancelled) {
-                    scan.removeItems(items.map((i) => i.id));
-                  }
-                },
-              ),
+              if (scanned || items.isNotEmpty)
+                CleanupSummaryBar(
+                  count: selected.length,
+                  size: size,
+                  risk: highestRisk(selected),
+                  labelOverride: allTrash
+                      ? (size == null
+                            ? 'Esvaziar lixeira'
+                            : 'Esvaziar lixeira ($size)')
+                      : null,
+                  onClearSelection: () {
+                    for (final i in selected) {
+                      scan.toggle(i.id);
+                    }
+                  },
+                  onClean: flow.canClean
+                      ? () async {
+                          final result = await flow.run(context, toRun);
+                          if (result != null && allTrash && !result.cancelled) {
+                            scan.removeItems(items.map((i) => i.id));
+                          }
+                        }
+                      : null,
+                ),
             ],
           ),
         );

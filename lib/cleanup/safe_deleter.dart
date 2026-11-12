@@ -2,41 +2,62 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../core/system_paths.dart';
+
 enum DeleteOutcome { deleted, missing, refused, failed }
+
+enum _Check { ok, missing, refused }
 
 class SafeDeleter {
   SafeDeleter({
     required List<String> allowedRoots,
     required List<String> protectedPaths,
-  }) : _allowedRoots = allowedRoots.map(p.normalize).toList(),
+    String? home,
+  }) : _allowedRoots = [
+         for (final root in allowedRoots.map(p.normalize))
+           if (home == null || !isForbiddenMappedDir(root, home: home)) root,
+       ],
        _protectedPaths = protectedPaths.map(p.normalize).toList();
 
   final List<String> _allowedRoots;
   final List<String> _protectedPaths;
 
-  Future<DeleteOutcome> delete(String path) async {
-    if (!p.isAbsolute(path)) return DeleteOutcome.refused;
+  Future<bool> canRemove(String path) async =>
+      (await _check(path)) == _Check.ok;
+
+  Future<_Check> _check(String path) async {
+    if (!p.isAbsolute(path)) return _Check.refused;
     final target = p.normalize(p.absolute(path));
     if (!_isDeletable(target, _allowedRoots, _protectedPaths)) {
-      return DeleteOutcome.refused;
+      return _Check.refused;
     }
-
+    final String realParent;
     try {
-      final String realParent;
-      try {
-        realParent = await Directory(p.dirname(target)).resolveSymbolicLinks();
-      } on FileSystemException {
-        return DeleteOutcome.missing;
-      }
-      final realTarget = p.join(realParent, p.basename(target));
-      if (!_isDeletable(
-        realTarget,
-        await _resolveAll(_allowedRoots),
-        await _resolveAll(_protectedPaths),
-      )) {
-        return DeleteOutcome.refused;
-      }
+      realParent = await Directory(p.dirname(target)).resolveSymbolicLinks();
+    } on FileSystemException {
+      return _Check.missing;
+    }
+    final realTarget = p.join(realParent, p.basename(target));
+    if (!_isDeletable(
+      realTarget,
+      await _resolveAll(_allowedRoots),
+      await _resolveAll(_protectedPaths),
+    )) {
+      return _Check.refused;
+    }
+    return _Check.ok;
+  }
 
+  Future<DeleteOutcome> delete(String path) async {
+    try {
+      switch (await _check(path)) {
+        case _Check.refused:
+          return DeleteOutcome.refused;
+        case _Check.missing:
+          return DeleteOutcome.missing;
+        case _Check.ok:
+      }
+      final target = p.normalize(p.absolute(path));
       switch (FileSystemEntity.typeSync(target, followLinks: false)) {
         case FileSystemEntityType.notFound:
           return DeleteOutcome.missing;

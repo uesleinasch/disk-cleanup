@@ -60,7 +60,7 @@ class AlertBanner extends StatelessWidget {
     super.key,
     required this.level,
     required this.volume,
-    required this.safeBytes,
+    required this.safeSize,
     required this.warnPercent,
     required this.onSnooze,
     required this.onShowWhatToFree,
@@ -68,10 +68,10 @@ class AlertBanner extends StatelessWidget {
 
   final AlertLevel level;
   final VolumeUsage volume;
-  final int safeBytes;
+  final String? safeSize;
   final int warnPercent;
   final VoidCallback onSnooze;
-  final VoidCallback onShowWhatToFree;
+  final VoidCallback? onShowWhatToFree;
 
   @override
   Widget build(BuildContext context) {
@@ -85,12 +85,17 @@ class AlertBanner extends StatelessWidget {
     final title = critical
         ? 'Disco quase cheio: restam $free ($pct)'
         : 'Espaço em disco baixo: restam $free ($pct)';
-    final body = critical
-        ? 'Programas podem falhar ao salvar arquivos. Libere espaço agora: '
-              '${formatBytes(safeBytes)} podem sair com segurança.'
-        : 'O limite de atenção é $warnPercent% livre. Dá para liberar '
-              '${formatBytes(safeBytes)} com segurança sem tocar em arquivos '
-              'pessoais.';
+    final body = switch ((critical, safeSize)) {
+      (true, null) =>
+        'Programas podem falhar ao salvar arquivos. Libere espaço agora.',
+      (true, final size?) =>
+        'Programas podem falhar ao salvar arquivos. Libere espaço agora: '
+            '$size podem sair com segurança.',
+      (false, null) => 'O limite de atenção é $warnPercent% livre.',
+      (false, final size?) =>
+        'O limite de atenção é $warnPercent% livre. Dá para liberar '
+            '$size com segurança sem tocar em arquivos pessoais.',
+    };
     final text = Theme.of(context).textTheme;
     return Semantics(
       liveRegion: true,

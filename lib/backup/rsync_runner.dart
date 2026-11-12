@@ -132,6 +132,7 @@ class RsyncRunner {
     required List<String> sources,
     required String destination,
     bool mirror = false,
+    bool update = false,
     void Function(RsyncProgress)? onProgress,
     CancelToken? cancel,
   }) => run(
@@ -140,6 +141,7 @@ class RsyncRunner {
       sources: sources,
       destination: destination,
       mirror: mirror,
+      update: update,
     ),
     onProgress: onProgress,
     cancel: cancel,

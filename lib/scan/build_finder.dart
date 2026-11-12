@@ -3,6 +3,7 @@ import 'dart:io';
 import '../core/process_runner.dart';
 import '../settings/settings.dart';
 import 'du_scanner.dart';
+import 'project_activity.dart';
 
 class BuildArtifact {
   const BuildArtifact({
@@ -41,32 +42,37 @@ class BuildFinder {
   }) async {
     if (roots.isEmpty || rules.isEmpty) return [];
     final names = rules.map((r) => r.dirName).toSet().toList();
-    final result = await _runner.run('find', [
-      ...roots,
-      '-xdev',
-      if (excludeRoots.isNotEmpty) ...[
+    final result = await _runner.run(
+      'find',
+      [
+        ...roots,
+        '-xdev',
+        if (excludeRoots.isNotEmpty) ...[
+          '(',
+          for (var i = 0; i < excludeRoots.length; i++) ...[
+            if (i > 0) '-o',
+            '-path',
+            findPathLiteral(excludeRoots[i]),
+          ],
+          ')',
+          '-prune',
+          '-o',
+        ],
+        '-type',
+        'd',
         '(',
-        for (var i = 0; i < excludeRoots.length; i++) ...[
+        for (var i = 0; i < names.length; i++) ...[
           if (i > 0) '-o',
-          '-path',
-          findPathLiteral(excludeRoots[i]),
+          '-name',
+          names[i],
         ],
         ')',
         '-prune',
-        '-o',
+        '-print0',
       ],
-      '-type',
-      'd',
-      '(',
-      for (var i = 0; i < names.length; i++) ...[
-        if (i > 0) '-o',
-        '-name',
-        names[i],
-      ],
-      ')',
-      '-prune',
-      '-print0',
-    ], cancel: cancel);
+      cancel: cancel,
+      environment: cLocaleEnvironment,
+    );
 
     final matches = <({String path, String projectDir, BuildRule rule})>[];
     final seen = <String>{};
@@ -126,20 +132,15 @@ class BuildFinder {
   }
 
   static DateTime _projectModified(String projectDir, List<String> buildNames) {
-    DateTime? latest;
+    final newest = newestProjectModification(
+      projectDir,
+      extraPruned: buildNames,
+    );
+    if (newest != null) return newest;
     try {
-      for (final e in Directory(projectDir).listSync(followLinks: false)) {
-        if (buildNames.contains(
-          e.uri.pathSegments.where((s) => s.isNotEmpty).last,
-        )) {
-          continue;
-        }
-        final m = e.statSync().modified;
-        if (latest == null || m.isAfter(latest)) latest = m;
-      }
+      return Directory(projectDir).statSync().modified;
     } on FileSystemException {
-      latest = null;
+      return DateTime.fromMillisecondsSinceEpoch(0);
     }
-    return latest ?? Directory(projectDir).statSync().modified;
   }
 }

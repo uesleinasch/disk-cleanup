@@ -12,22 +12,30 @@ class BackupTarget {
     required this.id,
     required this.label,
     this.relPath = '',
+    this.fsRoot,
+    this.mountPoint,
   });
 
   final String id;
   final String label;
   final String relPath;
+  final String? fsRoot;
+  final String? mountPoint;
 
   Map<String, Object?> toJson() => {
     'id': id,
     'label': label,
     'relPath': relPath,
+    if (fsRoot != null) 'fsRoot': fsRoot,
+    if (mountPoint != null) 'mountPoint': mountPoint,
   };
 
   factory BackupTarget.fromJson(Map<String, Object?> json) => BackupTarget(
     id: json['id']! as String,
     label: json['label'] as String? ?? '',
     relPath: json['relPath'] as String? ?? '',
+    fsRoot: json['fsRoot'] as String?,
+    mountPoint: json['mountPoint'] as String?,
   );
 
   @override
@@ -35,10 +43,12 @@ class BackupTarget {
       other is BackupTarget &&
       other.id == id &&
       other.label == label &&
-      other.relPath == relPath;
+      other.relPath == relPath &&
+      other.fsRoot == fsRoot &&
+      other.mountPoint == mountPoint;
 
   @override
-  int get hashCode => Object.hash(id, label, relPath);
+  int get hashCode => Object.hash(id, label, relPath, fsRoot, mountPoint);
 }
 
 bool _setEquals(Set<String> a, Set<String> b) =>

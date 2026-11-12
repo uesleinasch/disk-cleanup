@@ -245,6 +245,113 @@ void main() {
     }
   });
 
+  group('extract com runner simulado', () {
+    const tarFail = RunResult(
+      2,
+      [],
+      'gzip: stdin: unexpected end of file\n'
+      'tar: Child returned status 1\n',
+    );
+
+    Future<SecretsResult> extract(String gpgStderr) {
+      final pkg = path('secrets.tar.gz.gpg');
+      final staging = path('staging');
+      final fake = FakeProcessRunner()
+        ..whenPiped(
+          Command('gpg', [
+            '--pinentry-mode',
+            'ask',
+            '--no-symkey-cache',
+            '--status-fd',
+            '2',
+            '--decrypt',
+            pkg,
+          ]),
+          Command('tar', ['xzf', '-', '-C', staging]),
+          RunResult(2, [], gpgStderr),
+          tarFail,
+        );
+      return SecretsArchiver(
+        home: home,
+        runner: fake,
+      ).extract(file: pkg, staging: staging);
+    }
+
+    final cases = {
+      'senha errada no gpg 2.2 em inglês': (
+        'gpg: AES256 encrypted data\n'
+            '[GNUPG:] NEED_PASSPHRASE_SYM 9 3 2\n'
+            'gpg: encrypted with 1 passphrase\n'
+            '[GNUPG:] BEGIN_DECRYPTION\n'
+            '[GNUPG:] DECRYPTION_INFO 2 9\n'
+            '[GNUPG:] DECRYPTION_FAILED\n'
+            'gpg: decryption failed: Bad session key\n'
+            '[GNUPG:] END_DECRYPTION\n',
+        'Senha errada',
+      ),
+      'senha errada no gpg 2.2 traduzido': (
+        'gpg: dados cifrados com AES256\n'
+            '[GNUPG:] NEED_PASSPHRASE_SYM 9 3 2\n'
+            '[GNUPG:] BEGIN_DECRYPTION\n'
+            '[GNUPG:] DECRYPTION_INFO 2 9\n'
+            '[GNUPG:] DECRYPTION_FAILED\n'
+            'gpg: descriptografia falhou: Chave de sessão incorreta\n'
+            '[GNUPG:] END_DECRYPTION\n',
+        'Senha errada',
+      ),
+      'senha errada no gpg 2.4': (
+        'gpg: AES256.CFB dados cifrados\n'
+            '[GNUPG:] NEED_PASSPHRASE_SYM 9 3 10\n'
+            '[GNUPG:] BEGIN_DECRYPTION\n'
+            '[GNUPG:] DECRYPTION_INFO 2 9 0\n'
+            '[GNUPG:] ERROR symkey_decrypt.maybe_error 11_BAD_PASSPHRASE\n'
+            '[GNUPG:] DECRYPTION_FAILED\n'
+            'gpg: descriptografia falhou: Chave de sessão incorreta\n'
+            '[GNUPG:] END_DECRYPTION\n'
+            '[GNUPG:] FAILURE gpg-exit 33554433\n',
+        'Senha errada',
+      ),
+      'pacote adulterado no gpg 2.2': (
+        'gpg: AES256 encrypted data\n'
+            '[GNUPG:] NEED_PASSPHRASE_SYM 9 3 2\n'
+            '[GNUPG:] BEGIN_DECRYPTION\n'
+            '[GNUPG:] DECRYPTION_INFO 2 9\n'
+            '[GNUPG:] PLAINTEXT 62 1794506828 \n'
+            'gpg: WARNING: encrypted message has been manipulated!\n'
+            '[GNUPG:] BADMDC\n'
+            '[GNUPG:] DECRYPTION_FAILED\n'
+            '[GNUPG:] END_DECRYPTION\n',
+        'danificado ou incompleto',
+      ),
+      'pacote cortado no gpg 2.4': (
+        'gpg: AES256.CFB dados cifrados\n'
+            '[GNUPG:] NEED_PASSPHRASE_SYM 9 3 10\n'
+            '[GNUPG:] BEGIN_DECRYPTION\n'
+            '[GNUPG:] DECRYPTION_INFO 2 9 0\n'
+            '[GNUPG:] PLAINTEXT 62 1794506828 \n'
+            'gpg: block_filter 0x00005cb027f58f80: read error (size=79280,a->size=32176)\n'
+            'gpg: CUIDADO: a mensagem criptografada foi manipulada!\n'
+            '[GNUPG:] BADMDC\n'
+            '[GNUPG:] DECRYPTION_FAILED\n'
+            '[GNUPG:] END_DECRYPTION\n'
+            'gpg: block_filter: pending bytes!\n'
+            '[GNUPG:] FAILURE gpg-exit 33554433\n',
+        'danificado ou incompleto',
+      ),
+    };
+
+    for (final MapEntry(key: name, value: (stderr, text)) in cases.entries) {
+      test(name, () async {
+        final r = await extract(stderr);
+        expect(r.outcome, SecretsOutcome.failed);
+        expect(r.message, contains(text));
+        if (text != 'Senha errada') {
+          expect(r.message, isNot(contains('Senha errada')));
+        }
+      });
+    }
+  });
+
   group('gpg real com pinentry de teste', () {
     late Map<String, String> env;
 

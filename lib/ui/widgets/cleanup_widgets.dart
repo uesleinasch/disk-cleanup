@@ -17,6 +17,18 @@ IconData categoryIcon(CleanupCategory c) => switch (c) {
   CleanupCategory.largeFile => Symbols.draft_rounded,
 };
 
+String itemSizeLabel(CleanupItem i) =>
+    i.sizeUnknown ? 'Desconhecido' : formatBytes(i.bytes);
+
+String? totalSizeLabel(Iterable<CleanupItem> items) {
+  final known = items.fold(0, (a, i) => i.sizeUnknown ? a : a + i.bytes);
+  if (!items.any((i) => i.sizeUnknown)) return formatBytes(known);
+  return known == 0 ? null : 'pelo menos ${formatBytes(known)}';
+}
+
+String withSize(String verb, String? size) =>
+    size == null ? verb : '$verb $size';
+
 class CleanupItemTile extends StatelessWidget {
   const CleanupItemTile({
     super.key,
@@ -96,14 +108,36 @@ class CleanupItemTile extends StatelessWidget {
               RiskChip(level: item.risk),
               const SizedBox(width: 12),
               SizedBox(
-                width: 84,
+                width: item.sizeUnknown ? null : 84,
                 child: Tooltip(
-                  message: formatBytesExact(item.bytes),
-                  child: Text(
-                    formatBytes(item.bytes),
-                    textAlign: TextAlign.right,
-                    style: text.labelLarge?.copyWith(fontFeatures: kTabular),
-                  ),
+                  message: item.sizeUnknown
+                      ? 'Sem permissão de leitura'
+                      : formatBytesExact(item.bytes),
+                  child: item.sizeUnknown
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Symbols.lock_rounded,
+                              size: 16,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              itemSizeLabel(item),
+                              style: text.labelLarge?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Text(
+                          formatBytes(item.bytes),
+                          textAlign: TextAlign.right,
+                          style: text.labelLarge?.copyWith(
+                            fontFeatures: kTabular,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -119,7 +153,7 @@ class CleanupSummaryBar extends StatelessWidget {
   const CleanupSummaryBar({
     super.key,
     required this.count,
-    required this.bytes,
+    required this.size,
     required this.risk,
     required this.onClean,
     this.onClearSelection,
@@ -128,7 +162,7 @@ class CleanupSummaryBar extends StatelessWidget {
   });
 
   final int count;
-  final int bytes;
+  final String? size;
   final RiskLevel risk;
   final VoidCallback? onClean;
   final VoidCallback? onClearSelection;
@@ -139,9 +173,10 @@ class CleanupSummaryBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final danger = risk == RiskLevel.danger;
-    final label =
-        labelOverride ??
-        '${danger ? 'Apagar' : 'Limpar'} ${formatBytes(bytes)}';
+    final label = labelOverride ?? withSize(danger ? 'Apagar' : 'Limpar', size);
+    final summary = size == null
+        ? '$count selecionados · tamanho desconhecido'
+        : '$count selecionados · $size serão liberados';
     return Container(
       decoration: BoxDecoration(
         color: scheme.surfaceContainer,
@@ -157,7 +192,7 @@ class CleanupSummaryBar extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(minWidth: 200),
             child: Text(
-              '$count selecionados · ${formatBytes(bytes)} serão liberados',
+              summary,
               style: Theme.of(context).textTheme.bodyMedium
                   ?.copyWith(fontFeatures: kTabular),
             ),
@@ -240,7 +275,9 @@ class _CleanupConfirmDialogState extends State<_CleanupConfirmDialog> {
     final sev = Theme.of(context).extension<SeverityColors>()!;
     final text = Theme.of(context).textTheme;
     final items = widget.items;
-    final total = formatBytes(items.fold(0, (a, i) => a + i.bytes));
+    final total =
+        totalSizeLabel(items) ??
+        (items.length == 1 ? '1 item' : '${items.length} itens');
     final risk = highestRisk(items);
     final needsRoot = batchNeedsRoot(items);
     final personal = widget.offerPermanent;
@@ -342,7 +379,7 @@ class _CleanupConfirmDialogState extends State<_CleanupConfirmDialog> {
                             ),
                             const SizedBox(width: 12),
                             Text(
-                              formatBytes(i.bytes),
+                              itemSizeLabel(i),
                               style: text.labelLarge?.copyWith(
                                 fontFeatures: kTabular,
                               ),

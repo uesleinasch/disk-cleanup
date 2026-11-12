@@ -39,6 +39,10 @@ List<String> _headings(String md) => [
     if (l.startsWith('## ')) l,
 ];
 
+const _replaced =
+    '--backup-dir="\$HOME/.local/share/disk-cleanup/substituidos/'
+    'manual-\$(date +%F)"';
+
 void main() {
   test('shellQuote', () {
     expect(shellQuote('backup/projetos'), 'backup/projetos');
@@ -72,13 +76,15 @@ void main() {
     expect(
       md,
       contains(
-        'rsync -aH --info=progress2 "\$DESTINO"/backup/projetos "\$HOME"/\n',
+        'rsync -aH --info=progress2 --backup $_replaced '
+        '"\$DESTINO"/backup/projetos "\$HOME"/\n',
       ),
     );
     expect(
       md,
       contains(
-        'rsync -aH --info=progress2 "\$DESTINO"/backup/docs /mnt/dados/\n',
+        'rsync -aH --info=progress2 --backup $_replaced '
+        '"\$DESTINO"/backup/docs /mnt/dados/\n',
       ),
     );
     expect(md, contains('nem 123 pastas de build'));
@@ -108,7 +114,8 @@ void main() {
     expect(
       md,
       contains(
-        'cd ~ && gpg -d "\$DESTINO"/backup/secrets-2026-11-09.tar.gz.gpg | tar xzf -\n'
+        'cd ~ && gpg -d "\$DESTINO"/backup/secrets-2026-11-09.tar.gz.gpg '
+        '| tar xzf - --skip-old-files\n'
         'chmod 700 ~/.ssh\n',
       ),
     );
@@ -118,7 +125,10 @@ void main() {
     expect(
       md,
       contains(
-        'rsync -aH "\$DESTINO"/backup/navegadores/chrome/ '
+        'rsync -aH --backup '
+        '--backup-dir="\$HOME/.local/share/disk-cleanup/substituidos/'
+        'manual-\$(date +%F)/navegadores/chrome" '
+        '"\$DESTINO"/backup/navegadores/chrome/ '
         '"\$HOME"/.config/google-chrome/\n',
       ),
     );
@@ -177,6 +187,33 @@ void main() {
     expect(
       File(p.join(source, 'app', 'main.dart')).readAsStringSync(),
       'void main() {}',
+    );
+
+    File(p.join(source, 'app', 'main.dart'))
+      ..writeAsStringSync('editado depois')
+      ..setLastModifiedSync(DateTime(2020));
+    final again = Process.runSync(
+      'bash',
+      ['-c', commands],
+      environment: {'HOME': home},
+    );
+    expect(again.exitCode, 0, reason: '${again.stderr}');
+    expect(
+      File(p.join(source, 'app', 'main.dart')).readAsStringSync(),
+      'void main() {}',
+    );
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    expect(
+      File(
+        p.join(
+          home,
+          '.local/share/disk-cleanup/substituidos/manual-$today',
+          'Meus Projetos',
+          'app',
+          'main.dart',
+        ),
+      ).readAsStringSync(),
+      'editado depois',
     );
   });
 }

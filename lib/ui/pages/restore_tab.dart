@@ -163,6 +163,7 @@ class _SelectView extends StatelessWidget {
     final c = controller;
     final problems = [
       if (c.loadError != null) c.loadError!,
+      if (c.error != null) c.error!,
       for (final m in c.problems)
         if (m != 'Escolha o que restaurar.') m,
     ];
